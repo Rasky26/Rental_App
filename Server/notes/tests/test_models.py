@@ -1,5 +1,5 @@
 from django.test import TestCase
-from accounts.tests.test_models import create_user_obj
+from accounts.tests.test_models import CreateUser
 from notes.models import Notes
 from notes.tests.generic_functions import random_bell_curve_int, random_sentence
 import random
@@ -12,11 +12,13 @@ def create_note(text=None, user=None):
     """
     # If no values were passed
     if (not text) and (not user):
+        c = CreateUser()
+        c.create_user()
         return Notes.objects.create(
             note=random_sentence(
                 total_len=random_bell_curve_int(low=4, high=128), allow_numbers=True
             ),
-            user=create_user_obj(),
+            user=c.user,
         )
 
     # If no note text was passed
@@ -30,7 +32,9 @@ def create_note(text=None, user=None):
 
     # If not user object was passed
     if not user:
-        return Notes.objects.create(note=text, user=create_user_obj())
+        c = CreateUser()
+        c.create_user()
+        return Notes.objects.create(note=text, user=c.user)
 
     # If all fields were passed
     return Notes.objects.create(note=text, user=user)
@@ -43,9 +47,6 @@ class NoteModelsTestCase(TestCase):
 
     @classmethod
     def setUpTestData(self) -> None:
-        # print(
-        #     "setUpTestData: Run once to set up non-modified data for all class methods."
-        # )
         return super().setUpTestData()
 
     @classmethod
@@ -59,9 +60,10 @@ class NoteModelsTestCase(TestCase):
         """
         Verifies the information of a newly created note
         """
-        user = create_user_obj()
-        note = create_note(text="Testing", user=user)
-        self.assertEqual(note.user_id, user.id, "User ID mis-match on Note creation")
+        c = CreateUser()
+        c.create_user()
+        note = create_note(text="Testing", user=c.user)
+        self.assertEqual(note.user_id, c.user.id, "User ID mis-match on Note creation")
         self.assertEqual(note.note, "Testing", "Note text mis-match on Note creation")
         self.assertIsNone(note.changed_to, "Value was not None")
         self.assertTrue(note.created_at, "Created at time was not assigned")

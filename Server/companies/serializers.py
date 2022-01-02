@@ -1,6 +1,7 @@
-from accounts.serializers import UserReturnStringSerializer
+from accounts.serializers import UserReturnStringSerializer, UsernameSerializer
 from companies.models import Companies, CompanyInviteList
 from contacts.serializers import AddressSerializer, ContactSerializer
+from datetime import datetime, timedelta
 from general_ledger.serializers import GeneralLedgerNoCodeSerializer
 from notes.serializers import CreateNoteSerializer, NotesNewlyCreatedSerializer
 from rest_framework import serializers
@@ -39,8 +40,8 @@ class CompanyNewlyCreatedSerializer(serializers.ModelSerializer):
     gl_code = GeneralLedgerNoCodeSerializer()
     accounts_payable_gl = GeneralLedgerNoCodeSerializer()
     accounts_receivable_gl = GeneralLedgerNoCodeSerializer()
-    allowed_admins = UserReturnStringSerializer(many=True)
-    allowed_viewers = UserReturnStringSerializer(many=True)
+    allowed_admins = UsernameSerializer(many=True)
+    allowed_viewers = UsernameSerializer(many=True)
     notes = NotesNewlyCreatedSerializer(many=True, read_only=True)
 
     class Meta:
@@ -76,4 +77,30 @@ class CompanyInviteListSerializer(serializers.ModelSerializer):
             "email",
             "admin_in",
             "viewer_in",
+        )
+
+
+class CompanyNameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Companies
+        fields = ("company_name",)
+
+
+class CompanyInviteListActiveSerializer(serializers.ModelSerializer):
+    admin_in = CompanyNameSerializer(many=False, read_only=True)
+    viewer_in = CompanyNameSerializer(many=False, read_only=True)
+    valid_until = serializers.SerializerMethodField(method_name="get_valid_until")
+
+    class Meta:
+        model = CompanyInviteList
+        fields = (
+            "email",
+            "admin_in",
+            "viewer_in",
+            "valid_until",
+        )
+
+    def get_valid_until(self, obj):
+        return (obj.updated_at + timedelta(days=7)).strftime(
+            "%b. %d, %Y - %I:%M %p UTC"
         )

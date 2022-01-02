@@ -1,4 +1,6 @@
+from datetime import timedelta
 from django.db import models
+from django.utils import timezone
 from accounts.models import User
 from contacts.models import Addresses, Contacts
 from general_ledger.models import GeneralLedgerCodes
@@ -88,6 +90,13 @@ class Companies(PackageExtensionsMixin, TimeStampMixin):
             return f"{self.business_name} | {self.legal_name}"
         return f"{self.business_name}"
 
+    @property
+    def company_name(self):
+        """
+        Returns the company's name and legal name if available
+        """
+        return self.__str__()
+
 
 class CompanyInviteList(TimeStampMixin):
     """
@@ -113,7 +122,10 @@ class CompanyInviteList(TimeStampMixin):
     class Meta:
         verbose_name = "Company Invite List"
         verbose_name_plural = "Company Invites List"
-        ordering = ("email",)
+        ordering = (
+            "-updated_at",
+            "email",
+        )
         # https://stackoverflow.com/a/66860132
         constraints = [
             models.CheckConstraint(
@@ -132,5 +144,14 @@ class CompanyInviteList(TimeStampMixin):
 
     def __str__(self):
         if self.admin_in:
-            return f"{self.email} - Admin Invitation"
-        return f"{self.email} - Viewer Invitation"
+            return f"{self.email} - Admin Invitation - Valid until: {(self.updated_at + timedelta(days=7)).strftime('%b. %d, %Y - %I:%M %p UTC')}"
+        return f"{self.email} - Viewer Invitation - Valid until: {(self.updated_at + timedelta(days=7)).strftime('%b. %d, %Y - %I:%M %p UTC')}"
+
+    @property
+    def timeout(self):
+        """
+        Checks if the invite has is no longer valid. Invite links are valid for seven (7) days.
+
+        Uses the 'updated_at' field, which reflects when the latest changes were made.
+        """
+        return self.updated_at + timedelta(days=7) < timezone.now()

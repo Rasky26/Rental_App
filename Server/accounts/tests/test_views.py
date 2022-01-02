@@ -1,7 +1,6 @@
-from django.http import response
-from django.test import Client, TestCase
 from accounts.models import User
-from accounts.tests.test_models import CreateUser, get_new_admin_user, get_new_user
+from accounts.tests.test_models import CreateUser
+from django.test import Client, TestCase
 from notes.tests.generic_functions import random_string
 import string
 
@@ -16,17 +15,16 @@ class CreateCustomerViews(CreateUser):
         """
         Registers a new uesr
         """
-        self.check_user_exists()
-
-        self.registration_resonse = self.client.post(
+        self.registration_response = self.client.post(
             path="/accounts/registration",
             data=dict(username=self.username, password=self.password),
+            content_type="application/json",
         )
 
         # If login was valid, set the additional fields
-        if self.registration_resonse.status_code == 200:
+        if self.registration_response.status_code == 200:
             # Update with the return token
-            self.token = self.login_response.data["token"]
+            self.token = self.registration_response.data["token"]
             # Update the self.client with the token header
             self.client = Client(HTTP_AUTHORIZATION=f"Token {self.token}")
 
@@ -39,6 +37,7 @@ class CreateCustomerViews(CreateUser):
         self.login_response = self.client.post(
             path="/accounts/login",
             data=dict(username=self.username, password=self.password),
+            content_type="application/json",
         )
 
         # If login was valid, set the additional fields
@@ -53,7 +52,9 @@ class CreateCustomerViews(CreateUser):
         Log out the user
         """
         self.logout_response = self.client.post(
-            path="/accounts/logout", data=dict(token=self.token)
+            path="/accounts/logout",
+            data=dict(token=self.token),
+            content_type="application/json",
         )
 
     def logout_all(self):
@@ -61,82 +62,10 @@ class CreateCustomerViews(CreateUser):
         Log out the user from all instances
         """
         self.logout_all_response = self.client.post(
-            path="/accounts/logoutall", data=dict(token=self.token)
+            path="/accounts/logoutall",
+            data=dict(token=self.token),
+            content_type="application/json",
         )
-
-
-def accounts_register(username, password):
-    """
-    Generic function to register a user
-    """
-    c = Client()
-    return c.post("/accounts/registration", dict(username=username, password=password))
-
-
-def accounts_login(username, password):
-    """
-    Generic function to login
-    """
-    c = Client()
-    return c.post("/accounts/login", dict(username=username, password=password))
-
-
-def user_token(admin=False, **user_info):
-    """
-    Returns a valid user token
-    """
-    if user_info:
-        user = get_new_user(user_info)
-    elif admin:
-        user = get_new_admin_user()
-    else:
-        user = get_new_user()
-    response = accounts_login(user["username"], user["password"])
-    return response.data["token"]
-
-
-def create_client(admin=False, **user_info):
-    """
-    Creates a client class with valid token for testing protected routes
-    """
-    token = user_token(admin, user_info)
-    return Client(HTTP_AUTHORIZATION=f"Token {token}")
-
-
-def accounts_logout(token):
-    """
-    Generic function to logout
-    """
-    c = create_client()
-    return c.post("/accounts/logout")
-
-
-def accounts_logoutall(token):
-    """
-    Generic function to logout
-    """
-    c = create_client()
-    return c.post("/accounts/logoutall")
-
-
-def make_post(as_admin=True, url=None, data=None, **user_info):
-    """
-    Function to quickly make a test post.
-
-    Set admin status, the URL, and the data.
-    """
-    c = create_client(as_admin, user_info)
-    return c.post(path=url, data=data, content_type="application/json")
-
-
-def get_response(as_admin=True, url=None, data=None):
-    """
-    Function to quickly make a get request.
-
-    Set admin status, the URL, and the (optional) data.
-    """
-    c = create_client(as_admin)
-    return c.get(path=url, data=data)
 
 
 class UserViewsTestCase(TestCase):
@@ -156,14 +85,16 @@ class UserViewsTestCase(TestCase):
         Test if the user can login successfully.
         Token of 64 chars should be returned on success.
         """
-        user = get_new_user()
-        response = accounts_login(user["username"], user["password"])
-        self.assertEqual(response.status_code, 200, "Login status_code not 200")
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        self.assertEqual(c.login_response.status_code, 200, "Login status_code not 200")
+        self.assertIn("token", c.login_response.data, "Did not find expected key")
+        self.assertRegex(c.token, "^[a-z0-9]{64}$", "Django knox token invalid regex")
+        self.assertIn("expiry", c.login_response.data, "Did not find expected key")
         self.assertRegex(
-            response.data["token"], "^[a-z0-9]{64}$", "Django knox token invalid regex"
-        )
-        self.assertRegex(
-            response.data["expiry"],
+            c.login_response.data["expiry"],
             "^20\d{2}-[0-1]\d-[0-3]\dT[0-2]\d:[0-5]\d:\d{2}.\d{6}Z$",
             "Django knox invalid date format",
         )
@@ -172,20 +103,23 @@ class UserViewsTestCase(TestCase):
         """
         Test a username not in the system fails out.
         """
-        user = get_new_user()
-        response = accounts_login("username_not_exist", user["password"])
+        c = CreateCustomerViews()
+        c.create_user()
+        c.username = "username_not_exist"
+        c.login()
+
         self.assertEqual(
-            response.status_code,
+            c.login_response.status_code,
             400,
-            f"Bad username produced response status_code other than 400. Got {response.status_code}",
+            f"Bad username produced response status_code other than 400. Got {c.login_response.status_code}",
         )
         self.assertEqual(
-            str(response.data["non_field_errors"][0]),
+            c.login_response.data["non_field_errors"][0],
             "Unable to log in with provided credentials.",
-            f"Unexpected response message. Got a message of '{str(response.data['non_field_errors'][0])}'",
+            f"Unexpected response message. Got a message of '{c.login_response.data['non_field_errors'][0]}'",
         )
         self.assertEqual(
-            response.data["non_field_errors"][0].code,
+            c.login_response.data["non_field_errors"][0].code,
             "authorization",
             "Did not get the expected error code",
         )
@@ -194,20 +128,23 @@ class UserViewsTestCase(TestCase):
         """
         Tests that a wrong password for a user fails out.
         """
-        user = get_new_user()
-        response = accounts_login(user["username"], "bad_password")
+        c = CreateCustomerViews()
+        c.create_user()
+        c.password = "bad_password"
+        c.login()
+
         self.assertEqual(
-            response.status_code,
+            c.login_response.status_code,
             400,
-            f"Bad username produced response status_code other than 400. Got {response.status_code}",
+            f"Bad username produced response status_code other than 400. Got {c.login_response.status_code}",
         )
         self.assertEqual(
-            str(response.data["non_field_errors"][0]),
+            c.login_response.data["non_field_errors"][0],
             "Unable to log in with provided credentials.",
-            f"Unexpected response message. Got a message of '{str(response.data['non_field_errors'][0])}'",
+            f"Unexpected response message. Got a message of '{c.login_response.data['non_field_errors'][0]}'",
         )
         self.assertEqual(
-            response.data["non_field_errors"][0].code,
+            c.login_response.data["non_field_errors"][0].code,
             "authorization",
             "Did not get the expected error code",
         )
@@ -216,30 +153,31 @@ class UserViewsTestCase(TestCase):
         """
         Tests that a user can properly logout.
         """
-        user = get_new_user()
-        response_login = accounts_login(user["username"], user["password"])
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
         # Ensure login was successful
         self.assertEqual(
-            response_login.status_code,
+            c.login_response.status_code,
             200,
-            f"Login status_code not 200. Got a value of {response_login.status_code}",
+            f"Login status_code not 200. Got a value of {c.login_response.status_code}",
         )
-        # Get token
-        token = response_login.data["token"]
         # Test that token is valid
-        self.assertRegex(token, "^[a-z0-9]{64}$", "Django knox token invalid regex")
+        self.assertRegex(c.token, "^[a-z0-9]{64}$", "Django knox token invalid regex")
+
         # Get the logout response
-        response_logout = accounts_logout(token)
+        c.logout()
         self.assertEqual(
-            response_logout.status_code,
+            c.logout_response.status_code,
             204,
-            f"Logout status_code not 204. Got a value of {response_logout.status_code}",
+            f"Logout status_code not 204. Got a value of {c.logout_response.status_code}",
         )
         self.assertIsNone(
-            response_logout.data,
+            c.logout_response.data,
             f"""Response contained unexpected messages:
         
-        {response_logout.data}
+        {c.logout_response.data}
         
         """,
         )
@@ -248,17 +186,21 @@ class UserViewsTestCase(TestCase):
         """
         Tests the registration of a new user.
         """
-        response = accounts_register(username="New_User", password="New_Password!")
+        c = CreateCustomerViews(username="New_User", password="New_Password!")
+        c.registration()
+
         self.assertEqual(
-            response.status_code,
+            c.registration_response.status_code,
             200,
-            f"Login status_code not 200. Got a value of {response.status_code}",
+            f"Login status_code not 200. Got a value of {c.registration_response.status_code}",
         )
         self.assertRegex(
-            response.data["token"], "^[a-z0-9]{64}$", "Django knox token invalid regex"
+            c.registration_response.data["token"],
+            "^[a-z0-9]{64}$",
+            "Django knox token invalid regex",
         )
         self.assertRegex(
-            response.data["expiry"],
+            c.registration_response.data["expiry"],
             "^20\d{2}-[0-1]\d-[0-3]\dT[0-2]\d:[0-5]\d:\d{2}.\d{6}Z$",
             "Django knox invalid date format",
         )
@@ -267,82 +209,106 @@ class UserViewsTestCase(TestCase):
         """
         Tests that a username with a null value can not be created.
         """
-        response = accounts_register(
+        c = CreateCustomerViews(
             username=f"name_with_{chr(0)}_symbol", password="Valid_Password!"
         )
+        c.registration()
+
         self.assertEqual(
-            response.status_code,
+            c.registration_response.status_code,
             400,
             f"Accepted invalid null character with ordinal #0",
         )
+        self.assertIn(
+            "registration-errors",
+            c.registration_response.data,
+            "Did not get expected key value",
+        )
+        self.assertIn(
+            "username",
+            c.registration_response.data["registration-errors"],
+            "Did not get expected key value",
+        )
         self.assertEqual(
-            str(response.data["username"][0]),
+            c.registration_response.data["registration-errors"]["username"][0],
             "Enter a valid username. This value may contain only letters, numbers, and @/./+/-/_ characters.",
-            f"Unexpected error message on null username value. Got {str(response.data['username'][0])}",
+            f"Unexpected error message on null username value. Got {c.registration_response.data['registration-errors']['username'][0]}",
         )
         self.assertEqual(
-            str(response.data["username"][0].code),
+            c.registration_response.data["registration-errors"]["username"][0].code,
             "invalid",
-            f"Unexpected error code on null username value. Got {str(response.data['username'][0].code)}",
+            f"Unexpected error code on null username value. Got {c.registration_response.data['registration-errors']['username'][0].code}",
         )
         self.assertEqual(
-            str(response.data["username"][1]),
+            c.registration_response.data["registration-errors"]["username"][1],
             "Null characters are not allowed.",
-            f"Unexpected error message on null username value. Got {str(response.data['username'][1])}",
+            f"Unexpected error message on null username value. Got {c.registration_response.data['registration-errors']['username'][1]}",
         )
         self.assertEqual(
-            str(response.data["username"][1].code),
+            c.registration_response.data["registration-errors"]["username"][1].code,
             "null_characters_not_allowed",
-            f"Unexpected error code on null username value. Got {str(response.data['username'][1].code)}",
+            f"Unexpected error code on null username value. Got {c.registration_response.data['registration-errors']['username'][1].code}",
         )
 
     def test_username_with_acceptable_and_unacceptable_characters(self):
         """
         Tests that a username with an unacceptable character can not be created.
         """
+        c = CreateCustomerViews(password="Valid_Password!")
+
         acceptable_characters = string.ascii_letters + string.digits + "@.+-_"
         for value in range(1, 128):
 
             # Unacceptable character test
             if chr(value) not in acceptable_characters:
-                response = accounts_register(
-                    username=f"name_with_{chr(value)}_symbol",
-                    password="Valid_Password!",
-                )
+                c.username = f"name_with_{chr(value)}_symbol"
+                c.registration()
+
                 self.assertEqual(
-                    response.status_code,
+                    c.registration_response.status_code,
                     400,
                     f"Accepted invalid character {chr(value)} with ordinal #{value}",
                 )
-                self.assertEqual(
-                    str(response.data["username"][0]),
-                    "Enter a valid username. This value may contain only letters, numbers, and @/./+/-/_ characters.",
-                    f"Unexpected error message on invalid username value. Got {str(response.data['username'][0])}",
+                self.assertIn(
+                    "registration-errors",
+                    c.registration_response.data,
+                    "Did not get expected key value",
+                )
+                self.assertIn(
+                    "username",
+                    c.registration_response.data["registration-errors"],
+                    "Did not get expected key value",
                 )
                 self.assertEqual(
-                    str(response.data["username"][0].code),
+                    c.registration_response.data["registration-errors"]["username"][0],
+                    "Enter a valid username. This value may contain only letters, numbers, and @/./+/-/_ characters.",
+                    f"Unexpected error message on invalid username value. Got {c.registration_response.data['registration-errors']['username'][0]}",
+                )
+                self.assertEqual(
+                    c.registration_response.data["registration-errors"]["username"][
+                        0
+                    ].code,
                     "invalid",
-                    f"Unexpected error code on invalid username value. Got {str(response.data['username'][0].code)}",
+                    f"Unexpected error code on invalid username value. Got {c.registration_response.data['registration-errors']['username'][0].code}",
                 )
 
             # Acceptable character test
             if chr(value) in acceptable_characters:
-                response = accounts_register(
-                    username=f"name_with_{chr(value)}_symbol",
-                    password="Valid_Password!",
-                )
+                c.username = f"name_with_{chr(value)}_symbol"
+                c.registration()
+
                 self.assertEqual(
-                    response.status_code,
+                    c.registration_response.status_code,
                     200,
                     f"Did not accept valid character {chr(value)} with ordinal #{value}",
                 )
                 self.assertRegex(
-                    response.data["token"],
+                    c.registration_response.data["token"],
                     "^[a-z0-9]{64}$",
                     "Django knox token invalid regex",
                 )
                 self.assertRegex(
-                    response.data["expiry"],
+                    c.registration_response.data["expiry"],
                     "^20\d{2}-[0-1]\d-[0-3]\dT[0-2]\d:[0-5]\d:\d{2}.\d{6}Z$",
                     "Django knox invalid date format",
                 )
@@ -351,46 +317,66 @@ class UserViewsTestCase(TestCase):
         """
         Tests that a password with a null value can not be created.
         """
-        response = accounts_register(
+        c = CreateCustomerViews(
             username="Valid_Username", password=f"password_with_{chr(0)}_symbol"
         )
+        c.registration()
+
         self.assertEqual(
-            response.status_code,
+            c.registration_response.status_code,
             400,
             f"Accepted invalid null character with ordinal #0",
         )
-        self.assertEqual(
-            str(response.data["password"][0]),
-            "Null characters are not allowed.",
-            f"Unexpected error message on null password value. Got {str(response.data['password'][0])}",
+        self.assertIn(
+            "registration-errors",
+            c.registration_response.data,
+            "Did not get expected key value",
+        )
+        self.assertIn(
+            "password",
+            c.registration_response.data["registration-errors"],
+            "Did not get expected key value",
         )
         self.assertEqual(
-            str(response.data["password"][0].code),
+            c.registration_response.data["registration-errors"]["password"][0],
+            "Null characters are not allowed.",
+            f"Unexpected error message on null password value. Got {c.registration_response.data['registration-errors']['password'][0]}",
+        )
+        self.assertEqual(
+            c.registration_response.data["registration-errors"]["password"][0].code,
             "null_characters_not_allowed",
-            f"Unexpected error code on null password value. Got {str(response.data['password'][0].code)}",
+            f"Unexpected error code on null password value. Got {c.registration_response.data['registration-errors']['password'][0].code}",
         )
 
     def test_password_with_acceptable_characters(self):
         """
         Tests that a password with any symbol other than null can be created.
         """
+        c = CreateCustomerViews(username="Valid_Username")
+
         for value in range(1, 128):
-            response = accounts_register(
-                username=random_string(),
-                password=f"password_with_{chr(value)}_symbol",
-            )
+            c.username = f"Valid_Username_{value}"
+            c.password = f"password_with_{chr(value)}_symbol"
+            c.registration()
+
             self.assertEqual(
-                response.status_code,
+                c.registration_response.status_code,
                 200,
                 f"Accepted invalid character {chr(value)} with ordinal #{1}",
             )
+            self.assertIn(
+                "token", c.registration_response.data, "Did not get expected key value"
+            )
             self.assertRegex(
-                response.data["token"],
+                c.registration_response.data["token"],
                 "^[a-z0-9]{64}$",
                 "Django knox token invalid regex",
             )
+            self.assertIn(
+                "expiry", c.registration_response.data, "Did not get expected key value"
+            )
             self.assertRegex(
-                response.data["expiry"],
+                c.registration_response.data["expiry"],
                 "^20\d{2}-[0-1]\d-[0-3]\dT[0-2]\d:[0-5]\d:\d{2}.\d{6}Z$",
                 "Django knox invalid date format",
             )

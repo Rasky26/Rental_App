@@ -41,5 +41,18 @@ class UserReturnStringSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id",
-            "__str__",
+            "get_name",
+        )
+
+
+class UsernameSerializer(serializers.ModelSerializer):
+    """
+    Returns the username
+    """
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
         )

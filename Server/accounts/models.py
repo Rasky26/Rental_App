@@ -22,3 +22,9 @@ class User(AbstractUser):
         elif not self.last_name:
             return f"{self.username} | {self.first_name}"
         return f"{self.username} | {self.first_name} {self.last_name}"
+
+    def get_name(self):
+        """
+        Returns a name string
+        """
+        return self.__str__()

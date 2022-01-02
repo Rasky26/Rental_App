@@ -1,12 +1,18 @@
+from accounts.tests.test_models import CreateUser
 from accounts.tests.test_views import CreateCustomerViews
-from companies.tests.test_models import create_company_obj
+from companies.models import CompanyInviteList
+from companies.tests.test_models import create_company_invite, create_company_obj
 from contacts.tests.test_views import get_address_data, get_contact_data
+from datetime import datetime, timedelta
 from django.test import Client, TestCase
+from django.utils import timezone
 from notes.tests.generic_functions import (
     random_bell_curve_int,
     random_string,
     random_sentence,
 )
+from unittest import mock
+import pytz
 import string
 from pprint import pprint
 
@@ -36,9 +42,6 @@ def company_data(
 class CompaniesViewsTestCase(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:
-        # print(
-        #     "setUpTestData: Run once to set up non-modified data for all class methods."
-        # )
         return super().setUpTestData()
 
     @classmethod
@@ -157,9 +160,9 @@ class CompaniesViewsTestCase(TestCase):
             1,
             f"Expected 1 allowed_admin. Got {len(res.data['allowed_admins'])}",
         )
-        self.assertIn(
-            c.user,
-            res.data["allowed_admins"],
+        self.assertEqual(
+            res.data["allowed_admins"][0]["username"],
+            c.username,
             "Registering user not set as allowed_admin",
         )
         self.assertFalse(
@@ -263,9 +266,6 @@ class CompaniesViewsTestCase(TestCase):
 class CompaniesInviteListTestCase(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:
-        # print(
-        #     "setUpTestData: Run once to set up non-modified data for all class methods."
-        # )
         return super().setUpTestData()
 
     @classmethod
@@ -275,9 +275,119 @@ class CompaniesInviteListTestCase(TestCase):
     def setUp(self):
         pass
 
-    def test_set_admin_invite_to_company(self):
+    def test_removal_expired_invites(self):
         """
-        Creates admin invite to company
+        Ensures all records of expired invites are deleted
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        company = create_company_obj()
+        company.allowed_admins.add(c.user)
+
+        # Set outdated timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+            # Create first invite
+            create_company_invite(
+                email="test_1@email.com", admin_in=True, viewer_in=False
+            )
+
+        # Set another outdated timestamp
+        mocked = datetime.now(tz=pytz.utc) - timedelta(days=7, minutes=1)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+            # Create second invite
+            create_company_invite(email="test_2@email.com")
+
+        # Set a valid timestamp
+        mocked = datetime.now(tz=pytz.utc) - timedelta(days=6, hours=23, minutes=59)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+            # Create second invite
+            create_company_invite(email="test_3@email.com")
+
+        # Get invites queryset
+        invites = CompanyInviteList.objects.all()
+
+        self.assertEqual(len(invites), 3, f"Expected 3 invites, Got {len(invites)}")
+        for invite in invites:
+            if invite.id in [1, 2]:
+                # Check that invites have expected start dates
+                self.assertLess(
+                    invite.updated_at + timedelta(days=7),
+                    timezone.now(),
+                    "Check test object start date if more than 7 days before now",
+                )
+                # Check the timeout status
+                self.assertTrue(
+                    invite.timeout,
+                    "Check model timeout date of seven (7) days",
+                )
+            else:
+                # Check that invites have expected start dates
+                self.assertGreater(
+                    invite.updated_at + timedelta(days=7),
+                    timezone.now(),
+                    "Check test object start date if more than 7 days before now",
+                )
+                # Check the timeout status
+                self.assertFalse(
+                    invite.timeout,
+                    "Check model timeout date of seven (7) days",
+                )
+
+        res = c.client.post(
+            path=f"/companies/invite/{company.id}",
+            data=dict(email="test@email.com", admin_in=True, viewer_in=False),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+
+        # Get updated invites queryset
+        invites = CompanyInviteList.objects.all()
+
+        self.assertEqual(len(invites), 2, f"Expected 2 invites, Got {len(invites)}")
+
+        for invite in invites:
+            self.assertFalse(invite.timeout, "Timeout was not False")
+            self.assertGreaterEqual(
+                invite.updated_at,
+                timezone.now() - timedelta(days=7),
+                "Remaining invite not meeting time criterium. Check the model timeout amount",
+            )
+
+    def test_invite_for_non_existant_company(self):
+        """
+        Verifies response when a non-existant company invite is sent
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        res = c.client.post(
+            path="/companies/invite/1234",
+            data=dict(email="test@email.com", admin_in=True, viewer_in=False),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 400, f"Expected 400. Got {res.status_code}")
+        self.assertIn("invite-error", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["invite-error"],
+            "invalid invite permissions for requested company",
+            "Custom message did not match",
+        )
+        self.assertIn("detail", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["detail"],
+            "Can not invite user to company with ID 1234",
+            "Custom message did not match",
+        )
+
+    def test_invite_to_company_without_proper_allowed_admin_permission(self):
+        """
+        Verifies response when a non-existant company invite is sent
         """
         c = CreateCustomerViews()
         c.create_user()
@@ -287,8 +397,775 @@ class CompaniesInviteListTestCase(TestCase):
 
         res = c.client.post(
             path=f"/companies/invite/{company.id}",
-            data=None,
+            data=dict(email="test@email.com", admin_in=True, viewer_in=False),
             content_type="application/json",
         )
 
-        print(res)
+        self.assertEqual(res.status_code, 400, f"Expected 400. Got {res.status_code}")
+        self.assertIn("invite-error", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["invite-error"],
+            "invalid invite permissions for requested company",
+            "Custom message did not match",
+        )
+        self.assertIn("detail", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["detail"],
+            "Can not invite user to company with ID 1",
+            "Custom message did not match",
+        )
+
+    def test_invite_to_company_where_no_permission_level_is_specified(self):
+        """
+        Verifies response when a non-existant company invite is sent
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        company = create_company_obj()
+        company.allowed_admins.add(c.user)
+
+        # Set admin_in AND viewer_in both to FALSE
+        res = c.client.post(
+            path=f"/companies/invite/{company.id}",
+            data=dict(email="test@email.com", admin_in=False, viewer_in=False),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 400, f"Expected 400. Got {res.status_code}")
+        self.assertIn("invalid-invite", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["invalid-invite"],
+            "clashing permission levels specified",
+            "Custom message did not match",
+        )
+        self.assertIn("invalid-info", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["invalid-info"],
+            "admin_in was 'False' & viewer_in was 'False'",
+            "Custom message did not match",
+        )
+
+    def test_invite_to_company_where_both_permission_levels_are_specified(self):
+        """
+        Verifies response when a non-existant company invite is sent
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        company = create_company_obj()
+        company.allowed_admins.add(c.user)
+
+        # Set admin_in AND viewer_in both to TRUE
+        res = c.client.post(
+            path=f"/companies/invite/{company.id}",
+            data=dict(email="test@email.com", admin_in=True, viewer_in=True),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 400, f"Expected 400. Got {res.status_code}")
+        self.assertIn("invalid-invite", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["invalid-invite"],
+            "clashing permission levels specified",
+            "Custom message did not match",
+        )
+        self.assertIn("invalid-info", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["invalid-info"],
+            "admin_in was 'True' & viewer_in was 'True'",
+            "Custom message did not match",
+        )
+
+    def test_serializer_fails_on_invalid_email(self):
+        """
+        Verifies response when a non-existant company invite is sent
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        company = create_company_obj()
+        company.allowed_admins.add(c.user)
+
+        # Set admin_in AND viewer_in both to TRUE
+        res = c.client.post(
+            path=f"/companies/invite/{company.id}",
+            data=dict(email="test@email", admin_in=True, viewer_in=False),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 400, f"Expected 400. Got {res.status_code}")
+        self.assertIn("invite-error", res.data, "Did not find expected key")
+        self.assertIn("email", res.data["invite-error"], "Did not find expected key")
+        self.assertEqual(
+            res.data["invite-error"]["email"][0],
+            "Enter a valid email address.",
+            "Invalid email address not matching",
+        )
+        self.assertEqual(
+            res.data["invite-error"]["email"][0].code,
+            "invalid",
+            "Invalid email address code not matching",
+        )
+
+    def test_company_admin_invite_new_user_as_viewer(self):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        # Set outdated timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            company = create_company_obj(random_info=False)
+            company.allowed_admins.add(c.user)
+
+            data = dict(email="test@email.com", admin_in=False, viewer_in=True)
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["email"], "test@email.com", "Did not get the expected email"
+        )
+        self.assertIn("admin_in", res.data, "Did not find expected key")
+        self.assertIsNone(res.data["admin_in"], "admin_in was not None")
+        self.assertIn("viewer_in", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["viewer_in"]["company_name"],
+            "Test | Test LLC",
+            "viewer_in invite id not matching expected company id",
+        )
+        self.assertIn("valid_until", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["valid_until"],
+            "Dec. 08, 2021 - 12:00 AM UTC",
+            "Did not get the correct valid time",
+        )
+
+    def test_company_admin_invite_new_user_as_admin(self):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        # Set outdated timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            company = create_company_obj(random_info=False)
+            company.allowed_admins.add(c.user)
+
+            data = dict(email="test@email.com", admin_in=True, viewer_in=False)
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["email"], "test@email.com", "Did not get the expected email"
+        )
+        self.assertIn("admin_in", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["admin_in"]["company_name"],
+            "Test | Test LLC",
+            "admin_in invite id not matching expected company id",
+        )
+        self.assertIn("viewer_in", res.data, "Did not find expected key")
+        self.assertIsNone(res.data["viewer_in"], "viewer_in was not None")
+        self.assertIn("valid_until", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["valid_until"],
+            "Dec. 08, 2021 - 12:00 AM UTC",
+            "Did not get the correct valid time",
+        )
+
+    def test_company_admin_invite_new_user_as_admin_when_they_are_already_pending_as_viewer(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        # Set specific timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            company = create_company_obj(random_info=False)
+            company.allowed_admins.add(c.user)
+
+            invite = create_company_invite(
+                company_obj=company,
+                email="test@email.com",
+                admin_in=False,
+                viewer_in=True,
+            )
+
+        self.assertEqual(company.id, 1, "Company ID did not get expected value of 1")
+        self.assertEqual(invite.email, "test@email.com", "wrong email")
+        self.assertIsNone(invite.admin_in, "admin_in not None")
+        self.assertEqual(
+            invite.viewer_in, company, "viewer_in not assigned to correct company"
+        )
+        self.assertTrue(invite.timeout, "should have timed out long ago")
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            data = dict(email="test@email.com", admin_in=True, viewer_in=False)
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["email"], "test@email.com", "Did not get the expected email"
+        )
+        self.assertIn("admin_in", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["admin_in"]["company_name"],
+            "Test | Test LLC",
+            "admin_in invite id not matching expected company id",
+        )
+        self.assertIn("viewer_in", res.data, "Did not find expected key")
+        self.assertIsNone(res.data["viewer_in"], "viewer_in was not None")
+        self.assertIn("valid_until", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["valid_until"],
+            "Dec. 12, 2021 - 12:00 AM UTC",
+            "Did not get the correct valid time",
+        )
+
+    def test_company_admin_invite_new_user_as_admin_when_they_are_already_pending_as_admin(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        # Set specific timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            company = create_company_obj(random_info=False)
+            company.allowed_admins.add(c.user)
+
+            invite = create_company_invite(
+                company_obj=company,
+                email="test@email.com",
+                admin_in=True,
+                viewer_in=False,
+            )
+
+        self.assertEqual(company.id, 1, "Company ID did not get expected value of 1")
+        self.assertEqual(invite.email, "test@email.com", "wrong email")
+        self.assertEqual(
+            invite.admin_in, company, "admin_in not assigned to correct company"
+        )
+        self.assertIsNone(invite.viewer_in, "viewer_in not None")
+        self.assertTrue(invite.timeout, "should have timed out long ago")
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            data = dict(email="test@email.com", admin_in=True, viewer_in=False)
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["email"], "test@email.com", "Did not get the expected email"
+        )
+        self.assertIn("admin_in", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["admin_in"]["company_name"],
+            "Test | Test LLC",
+            "admin_in invite id not matching expected company id",
+        )
+        self.assertIn("viewer_in", res.data, "Did not find expected key")
+        self.assertIsNone(res.data["viewer_in"], "viewer_in was not None")
+        self.assertIn("valid_until", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["valid_until"],
+            "Dec. 12, 2021 - 12:00 AM UTC",
+            "Did not get the correct valid time",
+        )
+
+    def test_company_admin_invite_new_user_as_viewer_when_they_are_already_pending_as_admin(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        # Set specific timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            company = create_company_obj(random_info=False)
+            company.allowed_admins.add(c.user)
+
+            invite = create_company_invite(
+                company_obj=company,
+                email="test@email.com",
+                admin_in=True,
+                viewer_in=False,
+            )
+
+        self.assertEqual(company.id, 1, "Company ID did not get expected value of 1")
+        self.assertEqual(invite.email, "test@email.com", "wrong email")
+        self.assertEqual(
+            invite.admin_in, company, "admin_in not assigned to correct company"
+        )
+        self.assertIsNone(invite.viewer_in, "viewer_in not None")
+        self.assertTrue(invite.timeout, "should have timed out long ago")
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            data = dict(email="test@email.com", admin_in=False, viewer_in=True)
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["email"], "test@email.com", "Did not get the expected email"
+        )
+        self.assertIn("admin_in", res.data, "Did not find expected key")
+        self.assertIsNone(res.data["admin_in"], "admin_in was not None")
+        self.assertIn("viewer_in", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["viewer_in"]["company_name"],
+            "Test | Test LLC",
+            "viewer_in invite id not matching expected company id",
+        )
+        self.assertIn("valid_until", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["valid_until"],
+            "Dec. 12, 2021 - 12:00 AM UTC",
+            "Did not get the correct valid time",
+        )
+
+    def test_company_admin_invite_new_user_as_viewer_when_they_are_already_pending_as_viewer(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        # Set specific timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            company = create_company_obj(random_info=False)
+            company.allowed_admins.add(c.user)
+
+            invite = create_company_invite(
+                company_obj=company,
+                email="test@email.com",
+                admin_in=False,
+                viewer_in=True,
+            )
+
+        self.assertEqual(company.id, 1, "Company ID did not get expected value of 1")
+        self.assertEqual(invite.email, "test@email.com", "wrong email")
+        self.assertIsNone(invite.admin_in, "admin_in not None")
+        self.assertEqual(
+            invite.viewer_in, company, "viewer_in not assigned to correct company"
+        )
+        self.assertTrue(invite.timeout, "should have timed out long ago")
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            data = dict(email="test@email.com", admin_in=False, viewer_in=True)
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["email"], "test@email.com", "Did not get the expected email"
+        )
+        self.assertIn("admin_in", res.data, "Did not find expected key")
+        self.assertIsNone(res.data["admin_in"], "admin_in was not None")
+        self.assertIn("viewer_in", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["viewer_in"]["company_name"],
+            "Test | Test LLC",
+            "viewer_in invite id not matching expected company id",
+        )
+        self.assertIn("valid_until", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["valid_until"],
+            "Dec. 12, 2021 - 12:00 AM UTC",
+            "Did not get the correct valid time",
+        )
+
+    def test_company_admin_invite_new_user_with_duplicate_invites_already_in_the_model(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        # Set specific timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            company = create_company_obj(random_info=False)
+            company.allowed_admins.add(c.user)
+
+            invite_1 = create_company_invite(
+                company_obj=company,
+                email="test@email.com",
+                admin_in=False,
+                viewer_in=True,
+            )
+
+            invite_2 = create_company_invite(
+                company_obj=company,
+                email="test@email.com",
+                admin_in=False,
+                viewer_in=True,
+            )
+
+        self.assertEqual(company.id, 1, "Company ID did not get expected value of 1")
+        self.assertEqual(invite_1.email, "test@email.com", "wrong email")
+        self.assertIsNone(invite_1.admin_in, "admin_in not None")
+        self.assertEqual(
+            invite_1.viewer_in, company, "viewer_in not assigned to correct company"
+        )
+        self.assertTrue(invite_1.timeout, "should have timed out long ago")
+        self.assertEqual(invite_2.email, "test@email.com", "wrong email")
+        self.assertIsNone(invite_2.admin_in, "admin_in not None")
+        self.assertEqual(
+            invite_2.viewer_in, company, "viewer_in not assigned to correct company"
+        )
+        self.assertTrue(invite_2.timeout, "should have timed out long ago")
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            data = dict(email="test@email.com", admin_in=False, viewer_in=True)
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["email"], "test@email.com", "Did not get the expected email"
+        )
+        self.assertIn("admin_in", res.data, "Did not find expected key")
+        self.assertIsNone(res.data["admin_in"], "admin_in was not None")
+        self.assertIn("viewer_in", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["viewer_in"]["company_name"],
+            "Test | Test LLC",
+            "viewer_in invite id not matching expected company id",
+        )
+        self.assertIn("valid_until", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["valid_until"],
+            "Dec. 12, 2021 - 12:00 AM UTC",
+            "Did not get the correct valid time",
+        )
+
+    def test_company_admin_invite_for_existing_user_not_associated_with_current_company(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        invite_user = CreateUser(
+            username="Test", email="test@email.com", password="123456789"
+        )
+        invite_user.create_user()
+
+        company = create_company_obj(random_info=False)
+        company.allowed_admins.add(c.user)
+
+        data = dict(email="test@email.com", admin_in=False, viewer_in=True)
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["email"], "test@email.com", "Did not get the expected email"
+        )
+        self.assertIn("admin_in", res.data, "Did not find expected key")
+        self.assertIsNone(res.data["admin_in"], "admin_in was not None")
+        self.assertIn("viewer_in", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["viewer_in"]["company_name"],
+            "Test | Test LLC",
+            "viewer_in invite id not matching expected company id",
+        )
+        self.assertIn("valid_until", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["valid_until"],
+            "Dec. 12, 2021 - 12:00 AM UTC",
+            "Did not get the correct valid time",
+        )
+
+    def test_company_admin_invite_for_existing_admin_user_already_associated_with_current_company(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        invite_user = CreateUser(
+            username="Test", email="test@email.com", password="123456789"
+        )
+        invite_user.create_user()
+
+        company = create_company_obj(random_info=False)
+        company.allowed_admins.add(c.user, invite_user.user)
+
+        data = dict(email="test@email.com", admin_in=True, viewer_in=False)
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 200, f"Expected 200. Got {res.status_code}")
+        self.assertIn("existing-admin", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["existing-admin"],
+            "Requested user with email 'test@email.com' is already set as an admin for 'Test | Test LLC'",
+            "Did not get the expected email",
+        )
+        self.assertIn("existing-email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["existing-email"],
+            "test@email.com",
+            "Did not receive expected email",
+        )
+
+    def test_company_admin_invite_for_existing_viewer_user_already_associated_with_current_company(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        invite_user = CreateUser(
+            username="Test", email="test@email.com", password="123456789"
+        )
+        invite_user.create_user()
+
+        company = create_company_obj(random_info=False)
+        company.allowed_admins.add(c.user)
+        company.allowed_viewers.add(invite_user.user)
+
+        data = dict(email="test@email.com", admin_in=True, viewer_in=False)
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 200, f"Expected 200. Got {res.status_code}")
+        self.assertIn("existing-viewer", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["existing-viewer"],
+            "Requested user with email 'test@email.com' is already set as a viewer for 'Test | Test LLC'",
+            "Did not get the expected email",
+        )
+        self.assertIn("existing-email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["existing-email"],
+            "test@email.com",
+            "Did not receive expected email",
+        )
+        self.assertIn("no-change", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["no-change"],
+            "Viewer status unchanged. Change permission levels in the company parameters.",
+            "Did not receive expected email",
+        )
+
+    def test_company_viewer_invite_for_existing_admin_user_already_associated_with_current_company(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        invite_user = CreateUser(
+            username="Test", email="test@email.com", password="123456789"
+        )
+        invite_user.create_user()
+
+        company = create_company_obj(random_info=False)
+        company.allowed_admins.add(c.user, invite_user.user)
+
+        data = dict(email="test@email.com", admin_in=False, viewer_in=True)
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 200, f"Expected 200. Got {res.status_code}")
+        self.assertIn("existing-admin", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["existing-admin"],
+            "Requested user with email 'test@email.com' is already set as an admin for 'Test | Test LLC'",
+            "Did not get the expected email",
+        )
+        self.assertIn("existing-email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["existing-email"],
+            "test@email.com",
+            "Did not receive expected email",
+        )
+        self.assertIn("no-change", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["no-change"],
+            "Admin status unchanged. Change permission levels in the company parameters.",
+            "Did not receive expected email",
+        )
+
+    def test_company_viewer_invite_for_existing_viewer_user_already_associated_with_current_company(
+        self,
+    ):
+        """
+        Creates admin invite to company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        invite_user = CreateUser(
+            username="Test", email="test@email.com", password="123456789"
+        )
+        invite_user.create_user()
+
+        company = create_company_obj(random_info=False)
+        company.allowed_admins.add(c.user)
+        company.allowed_viewers.add(invite_user.user)
+
+        data = dict(email="test@email.com", admin_in=False, viewer_in=True)
+
+        # Set updated timestamp
+        mocked = datetime(2021, 12, 5, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+
+            res = c.client.post(
+                path=f"/companies/invite/{company.id}",
+                data=data,
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 200, f"Expected 200. Got {res.status_code}")
+        self.assertIn("existing-viewer", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["existing-viewer"],
+            "Requested user with email 'test@email.com' is already set as a viewer for 'Test | Test LLC'",
+            "Did not get the expected email",
+        )
+        self.assertIn("existing-email", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["existing-email"],
+            "test@email.com",
+            "Did not receive expected email",
+        )
