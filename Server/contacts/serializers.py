@@ -11,8 +11,8 @@ class AddressSerializer(serializers.ModelSerializer):
         model = Addresses
         fields = (
             "id",
-            "address1",
-            "address2",
+            "address_1",
+            "address_2",
             "city",
             "state",
             "zipcode",

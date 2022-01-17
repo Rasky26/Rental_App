@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.2/ref/settings/
 """
 
+from os.path import join as os_join
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -40,8 +41,11 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # User apps
     "accounts",
+    "buildings",
+    "change_log",
     "companies",
     "contacts",
+    "documents",
     "general_ledger",
     "notes",
     # 3rd-party apps
@@ -136,10 +140,19 @@ USE_L10N = True
 USE_TZ = True
 
 
+# Static vs. Media files explanation: https://timmyomahony.com/blog/static-vs-media-and-root-vs-path-in-django
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/3.2/howto/static-files/
 
-STATIC_URL = "/static/"
+STATIC_ROOT = os_join(BASE_DIR, "public/static/")
+STATIC_URL = "/public/static/"
+
+# Media files (Client-uploaded files)
+# https://docs.djangoproject.com/en/3.2/ref/settings/#media-root
+
+MEDIA_ROOT = os_join(BASE_DIR, "public/media")
+MEDIA_URL = "/media/"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field

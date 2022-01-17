@@ -30,11 +30,11 @@ class PopulateAddressDictTestCase(TestCase):
         Ensures a blank address dictionary is unchanged
         """
         res = populate_address_dict(
-            dict(address1="", address2="", city="", state="", zipcode="")
+            dict(address_1="", address_2="", city="", state="", zipcode="")
         )
         self.assertEqual(
             res,
-            dict(address1="", address2="", city="", state="", zipcode=""),
+            dict(address_1="", address_2="", city="", state="", zipcode=""),
             "Did not get matching empty dict",
         )
 
@@ -42,10 +42,10 @@ class PopulateAddressDictTestCase(TestCase):
         """
         If too few fields are sent, make sure an expected dict of fields returns
         """
-        res = populate_address_dict(dict(address1="", address2=""))
+        res = populate_address_dict(dict(address_1="", address_2=""))
         self.assertEqual(
             res,
-            dict(address1="", address2="", city="", state="", zipcode=""),
+            dict(address_1="", address_2="", city="", state="", zipcode=""),
             "Did not get matching dict",
         )
 
@@ -55,8 +55,8 @@ class PopulateAddressDictTestCase(TestCase):
         """
         res = populate_address_dict(
             dict(
-                address1="",
-                address2="",
+                address_1="",
+                address_2="",
                 city="",
                 state="",
                 zipcode="",
@@ -66,8 +66,8 @@ class PopulateAddressDictTestCase(TestCase):
         self.assertEqual(
             res,
             dict(
-                address1="",
-                address2="",
+                address_1="",
+                address_2="",
                 city="",
                 state="",
                 zipcode="",
@@ -82,8 +82,8 @@ class PopulateAddressDictTestCase(TestCase):
         """
         res = populate_address_dict(
             dict(
-                address1="111 1st St. S",
-                address2="Apt. 1",
+                address_1="111 1st St. S",
+                address_2="Apt. 1",
                 city="City",
                 state="MN",
                 zipcode="55555-5555",
@@ -92,8 +92,8 @@ class PopulateAddressDictTestCase(TestCase):
         self.assertEqual(
             res,
             dict(
-                address1="111 1st St. S",
-                address2="Apt. 1",
+                address_1="111 1st St. S",
+                address_2="Apt. 1",
                 city="City",
                 state="MN",
                 zipcode="55555-5555",
@@ -107,8 +107,8 @@ class PopulateAddressDictTestCase(TestCase):
         """
         res = populate_address_dict(
             dict(
-                address1="   111  1st  St. S",
-                address2="Apt. 1      ",
+                address_1="   111  1st  St. S",
+                address_2="Apt. 1      ",
                 city="   City          ",
                 state="     MN           ",
                 zipcode=" 55555-5555                   ",
@@ -117,8 +117,8 @@ class PopulateAddressDictTestCase(TestCase):
         self.assertEqual(
             res,
             dict(
-                address1="111 1st St. S",
-                address2="Apt. 1",
+                address_1="111 1st St. S",
+                address_2="Apt. 1",
                 city="City",
                 state="MN",
                 zipcode="55555-5555",
@@ -134,8 +134,8 @@ class PopulateAddressDictTestCase(TestCase):
         """
         res = populate_address_dict(
             dict(
-                address1="   111  1st  St. S",
-                address2="Apt. 1      ",
+                address_1="   111  1st  St. S",
+                address_2="Apt. 1      ",
                 city="   City          ",
                 state="     MN           ",
                 zipcode=" 55555-5555                   ",
@@ -145,8 +145,8 @@ class PopulateAddressDictTestCase(TestCase):
         self.assertEqual(
             res,
             dict(
-                address1="111 1st St. S",
-                address2="Apt. 1",
+                address_1="111 1st St. S",
+                address_2="Apt. 1",
                 city="City",
                 state="MN",
                 zipcode="55555-5555",

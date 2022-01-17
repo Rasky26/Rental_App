@@ -2,8 +2,14 @@ from accounts.serializers import UserReturnStringSerializer, UsernameSerializer
 from companies.models import Companies, CompanyInviteList
 from contacts.serializers import AddressSerializer, ContactSerializer
 from datetime import datetime, timedelta
+from documents.models import Documents
+from documents.serializers import (
+    DocumentCreationSerializer,
+    DocumentSerializer,
+    ImageSerializer,
+)
 from general_ledger.serializers import GeneralLedgerNoCodeSerializer
-from notes.serializers import CreateNoteSerializer, NotesNewlyCreatedSerializer
+from notes.serializers import CreateNoteSerializer, NotesSerializer
 from rest_framework import serializers
 
 
@@ -29,9 +35,11 @@ class CompanyCreationSerializer(serializers.ModelSerializer):
         )
 
 
-class CompanyNewlyCreatedSerializer(serializers.ModelSerializer):
+class CompanyFullAdminSerializer(serializers.ModelSerializer):
     """
-    Serializes all fields of the Company model
+    Serializes all fields of the Company model.
+
+    Should be used with allowed_admins users due to comprehensive nature.
     """
 
     business_address = AddressSerializer()
@@ -42,7 +50,9 @@ class CompanyNewlyCreatedSerializer(serializers.ModelSerializer):
     accounts_receivable_gl = GeneralLedgerNoCodeSerializer()
     allowed_admins = UsernameSerializer(many=True)
     allowed_viewers = UsernameSerializer(many=True)
-    notes = NotesNewlyCreatedSerializer(many=True, read_only=True)
+    documents = DocumentSerializer(many=True)
+    images = ImageSerializer(many=True)
+    notes = NotesSerializer(many=True, read_only=True)
 
     class Meta:
         model = Companies
@@ -58,6 +68,8 @@ class CompanyNewlyCreatedSerializer(serializers.ModelSerializer):
             "accounts_receivable_gl",
             "allowed_admins",
             "allowed_viewers",
+            "documents",
+            "images",
             "notes",
             "accounts_payable_extension",
             "accounts_receivable_extension",
@@ -103,4 +115,26 @@ class CompanyInviteListActiveSerializer(serializers.ModelSerializer):
     def get_valid_until(self, obj):
         return (obj.updated_at + timedelta(days=7)).strftime(
             "%b. %d, %Y - %I:%M %p UTC"
+        )
+
+
+##############################################
+#   Upload Document To Company Serializer    #
+##############################################
+
+
+class CompanyUploadDocumentsSerializer(serializers.ModelSerializer):
+    """
+    Serializes documents to be attached to a specific company
+    """
+
+    # notes = CreateNoteSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Documents
+        fields = (
+            "name",
+            "document",
+            # "uploaded_by",
+            # "notes",
         )

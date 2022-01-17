@@ -1,7 +1,5 @@
-from accounts.models import User
 from accounts.tests.test_models import CreateUser
 from django.test import Client, TestCase
-from notes.tests.generic_functions import random_string
 import string
 
 
@@ -10,6 +8,13 @@ class CreateCustomerViews(CreateUser):
         CreateUser.__init__(self, username, email, password)
         self.client = Client()
         self.token = None
+
+    def make_async_client(self):
+        """
+        Overwrites client with AsyncClient() for async testing
+        """
+        # if not self.token:
+        #     self.client=AsyncClient()
 
     def registration(self):
         """
@@ -380,3 +385,36 @@ class UserViewsTestCase(TestCase):
                 "^20\d{2}-[0-1]\d-[0-3]\dT[0-2]\d:[0-5]\d:\d{2}.\d{6}Z$",
                 "Django knox invalid date format",
             )
+
+    # async def all_passwords_with_UTF8_chars_from_1_to_128(self):
+
+    # https://docs.djangoproject.com/en/4.0/topics/testing/tools/#testing-asynchronous-code
+
+    # c = CreateCustomerViews(username="Valid_Username")
+
+    # for value in range(1, 128):
+    #     c.username = f"Valid_Username_{value}"
+    #     c.password = f"password_with_{chr(value)}_symbol"
+    #     await c.registration()
+
+    #     await self.assertEqual(
+    #         c.registration_response.status_code,
+    #         200,
+    #         f"Accepted invalid character {chr(value)} with ordinal #{1}",
+    #     )
+    #     await self.assertIn(
+    #         "token", c.registration_response.data, "Did not get expected key value"
+    #     )
+    #     await self.assertRegex(
+    #         c.registration_response.data["token"],
+    #         "^[a-z0-9]{64}$",
+    #         "Django knox token invalid regex",
+    #     )
+    #     await self.assertIn(
+    #         "expiry", c.registration_response.data, "Did not get expected key value"
+    #     )
+    #     await self.assertRegex(
+    #         c.registration_response.data["expiry"],
+    #         "^20\d{2}-[0-1]\d-[0-3]\dT[0-2]\d:[0-5]\d:\d{2}.\d{6}Z$",
+    #         "Django knox invalid date format",
+    #     )

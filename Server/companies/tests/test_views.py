@@ -3,9 +3,14 @@ from accounts.tests.test_views import CreateCustomerViews
 from companies.models import CompanyInviteList
 from companies.tests.test_models import create_company_invite, create_company_obj
 from contacts.tests.test_views import get_address_data, get_contact_data
+from core.settings import BASE_DIR
 from datetime import datetime, timedelta
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from django.utils import timezone
+from os import listdir
+from os import remove as os_remove
+from os.path import join as os_join
 from notes.tests.generic_functions import (
     random_bell_curve_int,
     random_string,
@@ -14,7 +19,10 @@ from notes.tests.generic_functions import (
 from unittest import mock
 import pytz
 import string
+
+# import tempfile
 from pprint import pprint
+import json
 
 
 def company_data(
@@ -84,12 +92,12 @@ class CompaniesViewsTestCase(TestCase):
             "Did not get the correct legal name",
         )
         self.assertEqual(
-            f"{res.data['business_address']['address1']} {res.data['business_address']['address2']} {res.data['business_address']['city']} {res.data['business_address']['state']} {res.data['business_address']['zipcode']}",
+            f"{res.data['business_address']['address_1']} {res.data['business_address']['address_2']} {res.data['business_address']['city']} {res.data['business_address']['state']} {res.data['business_address']['zipcode']}",
             "111 1st St. S Apt. 1 City MN 55555-5555",
             "Did not get the correct business address",
         )
         self.assertEqual(
-            f"{res.data['mailing_address']['address1']} {res.data['mailing_address']['address2']} {res.data['mailing_address']['city']} {res.data['mailing_address']['state']} {res.data['mailing_address']['zipcode']}",
+            f"{res.data['mailing_address']['address_1']} {res.data['mailing_address']['address_2']} {res.data['mailing_address']['city']} {res.data['mailing_address']['state']} {res.data['mailing_address']['zipcode']}",
             "111 1st St. S Apt. 1 City MN 55555-5555",
             "Did not get the correct mailing address",
         )
@@ -194,7 +202,7 @@ class CompaniesViewsTestCase(TestCase):
         data = company_data(num_contacts=0, num_notes=0)
         data["business_address"] = None
         data["mailing_address"] = dict(
-            address1="", address2="", city="", state="", zipcode=""
+            address_1="", address_2="", city="", state="", zipcode=""
         )
 
         res = c.client.post(
@@ -218,7 +226,7 @@ class CompaniesViewsTestCase(TestCase):
         data = company_data(num_contacts=0, num_notes=0)
         data["business_address"] = None
         data["mailing_address"] = dict(
-            address1="111 1st St. S", address2="", city="", state="", zipcode=""
+            address_1="111 1st St. S", address_2="", city="", state="", zipcode=""
         )
         res = c.client.post(
             path="/companies/create", data=data, content_type="application/json"
@@ -231,7 +239,7 @@ class CompaniesViewsTestCase(TestCase):
 
         m = res.data["mailing_address"]
         self.assertEqual(
-            f"{m['address1']}{m['address2']}{m['city']}{m['state']}{m['zipcode']}",
+            f"{m['address_1']}{m['address_2']}{m['city']}{m['state']}{m['zipcode']}",
             "111 1st St. S",
             "Did not get expected mailing address",
         )
@@ -1168,4 +1176,175 @@ class CompaniesInviteListTestCase(TestCase):
             res.data["existing-email"],
             "test@email.com",
             "Did not receive expected email",
+        )
+
+
+class CompanyUploadDocumentsTestCase(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        return super().setUpTestData()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        return super().tearDownClass()
+
+    def setUp(self):
+        pass
+
+    def test_upload_document_to_company(self):
+        """
+        Uploads a single document to a company
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        company = create_company_obj(random_info=False)
+        company.allowed_admins.add(c.user)
+
+        data = dict(
+            name="Test",
+            document=SimpleUploadedFile(
+                name="Test File.pdf",
+                content=b"This is a test PDF.",
+                content_type="application/pdf",
+            ),
+        )
+
+        res = c.client.post(
+            path=f"/companies/{company.id}/upload-document",
+            data=data,
+        )
+
+        self.assertEqual(res.status_code, 201, f"Expected 201. Got {res.status_code}")
+        self.assertIn("documents", res.data, "Did not find expected key")
+        self.assertEqual(res.data["documents"][0]["name"], "Test", "Name did not match")
+        self.assertTrue(
+            res.data["documents"][0]["document"].startswith(
+                "/media/documents/Test_File"
+            ),
+            "Name did not match",
+        )
+        self.assertEqual(
+            res.data["documents"][0]["uploaded_by"]["get_name"],
+            c.username,
+            "Username does not match",
+        )
+
+        for f in listdir(os_join(BASE_DIR, "public/media/documents")):
+            if f.startswith("Test_File"):
+                os_remove(os_join(BASE_DIR, f"public/media/documents/{f}"))
+
+    def test_upload_document_fails_with_user_not_admin_in_company(self):
+        """
+        Document uploads fails when user does not have admin permissions
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        company = create_company_obj(random_info=False)
+
+        data = dict(
+            name="Test",
+            document=SimpleUploadedFile(
+                name="Test File.pdf",
+                content=b"This is a test PDF.",
+                content_type="application/pdf",
+            ),
+        )
+
+        res = c.client.post(
+            path=f"/companies/{company.id}/upload-document",
+            data=data,
+        )
+
+        self.assertEqual(res.status_code, 400, f"Expected 400. Got {res.status_code}")
+        self.assertIn("invite-error", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["invite-error"],
+            "invalid invite permissions for requested company",
+            "Custom message did not match",
+        )
+        self.assertIn("detail", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["detail"],
+            "Can not invite user to company with ID 1",
+            "Custom message did not match",
+        )
+
+    def test_upload_document_fails_when_user_has_viewer_status_in_company(self):
+        """
+        Document uploads fails when user only has viewer status
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        company = create_company_obj(random_info=False)
+        company.allowed_viewers.add(c.user)
+
+        data = dict(
+            name="Test",
+            document=SimpleUploadedFile(
+                name="Test File.pdf",
+                content=b"This is a test PDF.",
+                content_type="application/pdf",
+            ),
+        )
+
+        res = c.client.post(
+            path=f"/companies/{company.id}/upload-document",
+            data=data,
+        )
+
+        self.assertEqual(res.status_code, 400, f"Expected 400. Got {res.status_code}")
+        self.assertIn("invite-error", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["invite-error"],
+            "invalid invite permissions for requested company",
+            "Custom message did not match",
+        )
+        self.assertIn("detail", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["detail"],
+            "Can not invite user to company with ID 1",
+            "Custom message did not match",
+        )
+
+    def test_upload_document_fails_when_unauthenticated_user_tries_to_upload_document(
+        self,
+    ):
+        """
+        Unregistered user can not upload document
+        """
+        c = CreateCustomerViews()
+
+        company = create_company_obj(random_info=False)
+
+        data = dict(
+            name="Test",
+            document=SimpleUploadedFile(
+                name="Test File.pdf",
+                content=b"This is a test PDF.",
+                content_type="application/pdf",
+            ),
+        )
+
+        res = c.client.post(
+            path=f"/companies/{company.id}/upload-document",
+            data=data,
+        )
+
+        self.assertEqual(res.status_code, 401, f"Expected 401. Got {res.status_code}")
+        self.assertTrue("detail" in res.data, "'detail' not in response dict")
+        self.assertEqual(
+            str(res.data["detail"]),
+            "Authentication credentials were not provided.",
+            "Did not get the expected error message",
+        )
+        self.assertEqual(
+            res.data["detail"].code,
+            "not_authenticated",
+            "Did not receive the correct error code",
         )

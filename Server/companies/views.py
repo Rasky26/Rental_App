@@ -1,12 +1,13 @@
 from accounts.models import User
 from companies.models import Companies, CompanyInviteList
 from companies.serializers import (
+    CompanyFullAdminSerializer,
     CompanyCreationSerializer,
     CompanyInviteListActiveSerializer,
     CompanyInviteListSerializer,
-    CompanyNewlyCreatedSerializer,
+    CompanyUploadDocumentsSerializer,
 )
-from contacts.functions import populate_address_dict
+from contacts.functions import populate_address_dict, populate_contact_dict
 from contacts.models import Addresses, Contacts
 from django.db import transaction
 from django.db.models import Q
@@ -17,6 +18,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 # Create your views here.
+
+
+def send_invalid_permission_response(requested_level=None, level_id=None):
+    """
+    Generic error response for invalid permission levels.
+
+    Used for invalid companies or users sending invites to companies they do not have admin_in status in
+    """
+    return {
+        "invite-error": f"invalid invite permissions for requested {requested_level}",
+        "detail": f"Can not invite user to company with ID {level_id}",
+    }
 
 
 class CompanyCreationViewSet(generics.CreateAPIView):
@@ -135,6 +148,8 @@ class CompanyCreationViewSet(generics.CreateAPIView):
 
             # If contacts are present, loop through each contact
             for contact in contact_list:
+                # Clean-up the contact information
+                contact = populate_contact_dict(contact)
                 # Create the contact
                 contact_obj = Contacts.objects.create(**contact)
                 # Add that contact object to the ManyToMany contacts field
@@ -156,7 +171,7 @@ class CompanyCreationViewSet(generics.CreateAPIView):
         headers = self.get_success_headers(company_obj)
 
         return Response(
-            data=CompanyNewlyCreatedSerializer(company_obj).data,
+            data=CompanyFullAdminSerializer(company_obj).data,
             status=status.HTTP_201_CREATED,
             headers=headers,
         )
@@ -175,17 +190,6 @@ class CompanyInviteUserViewSet(generics.CreateAPIView):
     queryset = CompanyInviteList.objects.all()
     serializer_class = CompanyInviteListSerializer
     permission_classes = (IsAuthenticated,)
-
-    def send_bad_invite_response(self, company_id=None):
-        """
-        Generic error response for invalid invite request.
-
-        Used for invalid companies or users sending invites to companies they do not have admin_in status in
-        """
-        return {
-            "invite-error": "invalid invite permissions for requested company",
-            "detail": f"Can not invite user to company with ID {company_id}",
-        }
 
     def create(self, request, **kwargs):
         """
@@ -220,14 +224,18 @@ class CompanyInviteUserViewSet(generics.CreateAPIView):
 
         except Companies.DoesNotExist:
             return Response(
-                data=self.send_bad_invite_response(company_id=kwargs["pk"]),
+                data=send_invalid_permission_response(
+                    requested_level="company", level_id=kwargs["pk"]
+                ),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Check that the requesting user is set as an admin for the indicated company
         if not company_obj.allowed_admins.filter(pk=request.user.pk).exists():
             return Response(
-                data=self.send_bad_invite_response(company_id=kwargs["pk"]),
+                data=send_invalid_permission_response(
+                    requested_level="company", level_id=kwargs["pk"]
+                ),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -388,3 +396,64 @@ class CompanyInviteUserViewSet(generics.CreateAPIView):
                     status=status.HTTP_201_CREATED,
                     headers=self.get_success_headers(invite_obj),
                 )
+
+
+class CompanyUploadDocumentViewSet(generics.CreateAPIView):
+    """
+    Handles the upload of several documents at once.
+    """
+
+    queryset = Companies.objects.all()
+    serializer_class = CompanyUploadDocumentsSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def create(self, request, **kwargs):
+
+        # Check that the company exist
+        try:
+            company_obj = Companies.objects.get(pk=kwargs["pk"])
+        # If the company does not exist, return generic response
+        except Companies.DoesNotExist:
+            return Response(
+                data=send_invalid_permission_response(
+                    requested_level="company", level_id=kwargs["pk"]
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check that the requesting user is set as an admin for the indicated company
+        if not company_obj.allowed_admins.filter(pk=request.user.pk).exists():
+            return Response(
+                data=send_invalid_permission_response(
+                    requested_level="company", level_id=kwargs["pk"]
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Serialize the data
+        serializer = self.get_serializer(data=request.data)
+
+        # Check if the information is correct
+        if not serializer.is_valid():
+            return Response(
+                {"document-upload-error": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Save the information behind an atomic transaction
+        with transaction.atomic():
+
+            # Save the document and corresponding information
+            doc_obj = serializer.save(uploaded_by=request.user)
+
+            # Add that document reference to the company object
+            company_obj.documents.add(doc_obj)
+
+        # Set the response headers
+        headers = self.get_success_headers(company_obj)
+
+        return Response(
+            data=CompanyFullAdminSerializer(company_obj).data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )

@@ -1,6 +1,7 @@
+from accounts.views import LoginView, RegisterUserView
 from django.urls import path
 from knox import views as knox_views
-from .views import LoginView, RegisterUserView
+
 
 urlpatterns = [
     path("login", LoginView.as_view(), name="knox_login"),

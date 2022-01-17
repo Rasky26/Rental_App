@@ -153,4 +153,7 @@ cython_debug/
 # VSCode
 .vscode
 
+# Document storage folder
+public/
+
 # End of https://www.toptal.com/developers/gitignore/api/django

@@ -1,15 +1,13 @@
+from accounts.models import User
+from accounts.serializers import RegistraterUserSerializer
 from datetime import datetime
 from django.contrib.auth import login
 from knox.models import AuthToken
 from knox.views import LoginView as KnoxLoginView
-from .models import User
 from rest_framework import permissions, status
 from rest_framework.authtoken.serializers import AuthTokenSerializer
 from rest_framework.generics import CreateAPIView
 from rest_framework.response import Response
-from .serializers import RegistraterUserSerializer
-
-from pprint import pprint
 
 
 class LoginView(KnoxLoginView):

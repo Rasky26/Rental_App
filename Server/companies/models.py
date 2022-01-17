@@ -1,4 +1,7 @@
 from datetime import timedelta
+
+from django.db.models.fields import related
+from documents.models import Documents, Images
 from django.db import models
 from django.utils import timezone
 from accounts.models import User
@@ -77,6 +80,12 @@ class Companies(PackageExtensionsMixin, TimeStampMixin):
     )
     allowed_viewers = models.ManyToManyField(
         User, related_name="company_viewers_set", blank=True
+    )
+    documents = models.ManyToManyField(
+        Documents, related_name="company_documents_set", blank=True
+    )
+    images = models.ManyToManyField(
+        Images, related_name="company_images_set", blank=True
     )
     notes = models.ManyToManyField(Notes, related_name="company_notes_set", blank=True)
 

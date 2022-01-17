@@ -15,16 +15,16 @@ def get_address_data(random_address=True):
     """
     if random_address:
         return dict(
-            address1=random_sentence(total_len=random_bell_curve_int(low=8, high=20)),
-            address2=random_length_string(low=6, high=12),
+            address_1=random_sentence(total_len=random_bell_curve_int(low=8, high=20)),
+            address_2=random_length_string(low=6, high=12),
             city=random_length_string(low=4, high=20, allow_digits=False).title(),
             state="MN",
             zipcode=random_string(length=5, text=string.digits),
         )
 
     return dict(
-        address1="111 1st St. S",
-        address2="Apt. 1",
+        address_1="111 1st St. S",
+        address_2="Apt. 1",
         city="City",
         state="MN",
         zipcode="55555-5555",
