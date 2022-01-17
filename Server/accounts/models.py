@@ -27,7 +27,7 @@ class User(AbstractUser):
             return f"{self.username} | {self.first_name}"
         return f"{self.username} | {self.first_name} {self.last_name}"
 
-    def get_name(self):
+    def display_name(self):
         """
         Returns a name string
         """

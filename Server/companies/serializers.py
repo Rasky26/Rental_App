@@ -9,7 +9,7 @@ from documents.serializers import (
     ImageSerializer,
 )
 from general_ledger.serializers import GeneralLedgerNoCodeSerializer
-from notes.serializers import CreateNoteSerializer, NotesSerializer
+from notes.serializers import NoteCreateSerializer, NotesSerializer
 from rest_framework import serializers
 
 
@@ -21,7 +21,7 @@ class CompanyCreationSerializer(serializers.ModelSerializer):
     business_address = AddressSerializer()
     mailing_address = AddressSerializer()
     contacts = ContactSerializer(many=True)
-    notes = CreateNoteSerializer(many=True)
+    notes = NoteCreateSerializer(many=True)
 
     class Meta:
         model = Companies
@@ -128,7 +128,7 @@ class CompanyUploadDocumentsSerializer(serializers.ModelSerializer):
     Serializes documents to be attached to a specific company
     """
 
-    # notes = CreateNoteSerializer(many=True, read_only=True)
+    # notes = NoteCreateSerializer(many=True, read_only=True)
 
     class Meta:
         model = Documents

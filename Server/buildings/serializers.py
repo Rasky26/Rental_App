@@ -1,7 +1,7 @@
 from buildings.models import Buildings
 from contacts.serializers import AddressSerializer
 from documents.serializers import DocumentSerializer, ImageSerializer
-from notes.serializers import CreateNoteSerializer, NotesSerializer
+from notes.serializers import NoteCreateSerializer, NotesSerializer
 from rest_framework import serializers
 
 
@@ -11,7 +11,7 @@ class BuildingNoCompanyCreationSerializer(serializers.ModelSerializer):
     """
 
     address = AddressSerializer()
-    notes = CreateNoteSerializer(many=True)
+    notes = NoteCreateSerializer(many=True)
 
     class Meta:
         model = Buildings

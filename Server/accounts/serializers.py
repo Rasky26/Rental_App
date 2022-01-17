@@ -1,8 +1,6 @@
 from accounts.models import User
 from rest_framework import serializers
 
-# UserModel = get_user_model()
-
 
 class RegistraterUserSerializer(serializers.ModelSerializer):
     """
@@ -13,7 +11,6 @@ class RegistraterUserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
 
-        # user = UserModel.objects.create_user(
         user = User.objects.create_user(
             username=validated_data["username"],
             password=validated_data["password"],
@@ -21,7 +18,6 @@ class RegistraterUserSerializer(serializers.ModelSerializer):
         return user
 
     class Meta:
-        # model = UserModel
         model = User
         fields = (
             "id",
@@ -40,7 +36,7 @@ class UserReturnStringSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id",
-            "get_name",
+            "display_name",
         )
 
 

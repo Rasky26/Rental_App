@@ -65,7 +65,6 @@ class NoteModelsTestCase(TestCase):
         note = create_note(text="Testing", user=c.user)
         self.assertEqual(note.user_id, c.user.id, "User ID mis-match on Note creation")
         self.assertEqual(note.note, "Testing", "Note text mis-match on Note creation")
-        self.assertIsNone(note.changed_to, "Value was not None")
         self.assertTrue(note.created_at, "Created at time was not assigned")
         self.assertTrue(note.updated_at, "Updated at time was no assigned")
 
@@ -117,53 +116,15 @@ class NoteModelsTestCase(TestCase):
             "Note text did not match",
         )
 
-    def test_current_note_deletion_previous_note_remains(self):
-        """
-        Tests that when the current note is deleted that the previous note remains.
-        """
-        note_1 = create_note()
-        note_2 = create_note()
-        note_1.changed_to = note_2
-        note_1.save()
-        note_2.save()
-        note_2.delete()
-        self.assertEqual(
-            Notes.objects.all().count(),
-            0,
-            f"Expected 0 notes, found {Notes.objects.all().count()}",
-        )
-
-    def test_original_note_deletion_removes_linked_note(self):
+    def test_note_deletion_leaves_other_note(self):
         """
         Tests that when the previous note is deleted that the current note is removed too.
         """
         note_1 = create_note()
-        note_2 = create_note()
-        note_1.changed_to = note_2
-        note_1.save()
-        note_2.save()
+        create_note()
         note_1.delete()
         self.assertEqual(
             Notes.objects.all().count(),
             1,
             f"Expected 1 note, found {Notes.objects.all().count()}",
-        )
-
-    def test_original_note_deletion_removes_all_linked_notes(self):
-        """
-        Tests that when the previous note is deleted that the current note is removed too.
-        """
-        note_1 = create_note()
-        note_2 = create_note()
-        note_3 = create_note()
-        note_1.changed_to = note_2
-        note_2.changed_to = note_3
-        note_1.save()
-        note_2.save()
-        note_3.save()
-        note_1.delete()
-        self.assertEqual(
-            Notes.objects.all().count(),
-            2,
-            f"Expected 2 notes, found {Notes.objects.all().count()}",
         )

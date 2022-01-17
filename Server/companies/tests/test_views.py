@@ -1226,7 +1226,7 @@ class CompanyUploadDocumentsTestCase(TestCase):
             "Name did not match",
         )
         self.assertEqual(
-            res.data["documents"][0]["uploaded_by"]["get_name"],
+            res.data["documents"][0]["uploaded_by"]["display_name"],
             c.username,
             "Username does not match",
         )

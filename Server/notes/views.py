@@ -1,5 +1,5 @@
 from notes.models import Notes
-from notes.serializers import CreateNoteSerializer, NotesSerializer
+from notes.serializers import NotesSerializer, NoteUpdateSerializer
 from rest_framework import status
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -19,46 +19,38 @@ class GetAndEditNoteViewset(RetrieveUpdateAPIView):
     """
 
     queryset = Notes.objects.all()
-    serializer_class = NotesSerializer
+    serializer_class = NoteUpdateSerializer
     permission_classes = [IsAuthenticated]
 
-    # def update(self, request, **kwargs):
-    # def update(self, request, **kwargs):
-    #     """
-    #     Check for difference from existing note to request note. Save any differences to the change log table
-    #     """
-    #     # Serialize the data
-    #     serializer = self.get_serializer(data=request.data)
+    def update(self, request, **kwargs):
 
-    #     if not serializer.is_valid():
-    #         return Response({"bad": "bad serializer"})
+        try:
+            note = Notes.objects.get(pk=kwargs["pk"])
+        except Notes.DoesNotExist:
+            return Response(
+                data={"invalid-note": "unable to access requested note"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-    #     print(request.data)
-    #     print(kwargs, "!!!!!!!!!")
+        # # Check that the company exist
+        # try:
+        #     company_obj = Companies.objects.get(pk=kwargs["pk"])
+        # # If the company does not exist, return generic response
+        # except Companies.DoesNotExist:
+        #     return Response(
+        #         data=send_invalid_permission_response(
+        #             requested_level="company", level_id=kwargs["pk"]
+        #         ),
+        #         status=status.HTTP_400_BAD_REQUEST,
+        #     )
 
-    #     print(request.data.keys())
+        # # Check that the requesting user is set as an admin for the indicated company
+        # if not company_obj.allowed_admins.filter(pk=request.user.pk).exists():
+        #     return Response(
+        #         data=send_invalid_permission_response(
+        #             requested_level="company", level_id=kwargs["pk"]
+        #         ),
+        #         status=status.HTTP_400_BAD_REQUEST,
+        #     )
 
-    #     existing_note = Notes.objects.get(id=kwargs["pk"])
-
-    #     print(existing_note)
-
-    #     return Response({})
-
-    # if existing_note.user != self.request.user:
-    #     return Response(
-    #         {"incorrect-user": "Can not edit different user's note."},
-    #         status=status.HTTP_401_UNAUTHORIZED,
-    #     )
-
-    # If the note already has an edited note linked to it, return error response
-    # if existing_note.changed_to:
-    #     return Response(
-    #         {
-    #             "edit-exist": "Note already has edits applied. Can not edit an edited note."
-    #         },
-    #         status=status.HTTP_304_NOT_MODIFIED,
-    #     )
-
-    # serializer = self.get_serializer(data=request.data)
-    # serializer.is_valid(raise_exceptions=True)
-    # new_note = serializer.save(user=self.request.user)
+        return super().update(request, **kwargs)

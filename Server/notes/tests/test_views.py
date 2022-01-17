@@ -69,3 +69,41 @@ class NoteViewsTestCase(TestCase):
             note.user,
             "Change not associated with correct user",
         )
+
+    def test_update_note_by_different_user(self):
+        """
+        Saves original value to change log with the original user and updates the note with the other user
+        """
+        c1 = CreateCustomerViews()
+        c1.create_user()
+        c1.login()
+
+        note = create_note(text="Test note.", user=c1.user)
+
+        c2 = CreateCustomerViews()
+        c2.create_user()
+        c2.login()
+
+        data = dict(note="Test note!")
+
+        res = c2.client.patch(
+            path=f"/notes/{note.id}/update",
+            data=data,
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 400, f"Expected 400. Got {res.status_code}")
+        self.assertIn("failed-edit", res.data, "Did not find expected key")
+        self.assertEqual(
+            res.data["failed-edit"],
+            "Can only edit notes assigned to you",
+            "Note string mis-match",
+        )
+        self.assertEqual(
+            res.data["failed-edit"].code, "invalid", "Did not find expected key"
+        )
+
+        # Check that no values were saved to the change log
+        self.assertFalse(
+            ChangeLog.objects.all().exists(), "Changes were logged. Should be empty"
+        )

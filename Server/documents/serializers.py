@@ -1,6 +1,6 @@
 from accounts.serializers import UserReturnStringSerializer
 from documents.models import Documents, Images
-from notes.serializers import NotesSerializer, CreateNoteSerializer
+from notes.serializers import NoteCreateSerializer, NotesSerializer
 from rest_framework import serializers
 
 
@@ -9,7 +9,7 @@ class DocumentCreationSerializer(serializers.ModelSerializer):
     Serializes an uploaded file to be saved
     """
 
-    notes = CreateNoteSerializer(many=True)
+    notes = NoteCreateSerializer(many=True)
 
     class Meta:
         model = Documents
