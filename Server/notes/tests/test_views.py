@@ -107,3 +107,35 @@ class NoteViewsTestCase(TestCase):
         self.assertFalse(
             ChangeLog.objects.all().exists(), "Changes were logged. Should be empty"
         )
+
+    def test_update_note_fails_when_not_logged_in(self):
+        """
+        Saves original value to change log and updates note
+        """
+        c = CreateCustomerViews()
+        c.create_user()
+        c.login()
+
+        note = create_note(text="Test note.", user=c.user)
+
+        c.logout_all()
+        data = dict(note="Test note!")
+
+        res = c.client.patch(
+            path=f"/notes/{note.id}/update",
+            data=data,
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 401, f"Expected 401. Got {res.status_code}")
+        self.assertIn("detail", res.data, "Did not find expected key")
+        self.assertEqual(
+            str(res.data["detail"]),
+            "Invalid token.",
+            "Note string mis-match",
+        )
+        self.assertEqual(
+            res.data["detail"].code,
+            "authentication_failed",
+            "Did not find expected key",
+        )
