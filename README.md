@@ -7,7 +7,7 @@ Django server that works to automate as much of the apartment management process
 
 ...
 
-Active APIs:
+Active API's:
 
 <hr>
 
@@ -149,22 +149,22 @@ URL = /'accounts/registration'
       <td>buildings/{company-pk-value}/new-building</td>
       <td>POST</td>
       <td>Done</td>
-      <td>In development</td>
-      <td></td>
-      <td></td>
-      <td></td>
+      <td>Done</td>
+      <td>Done</td>
+      <td>Done</td>
+      <td>Done</td>
       <td></td>
     </tr>
     <tr>
       <td></td>
       <td>Edit a building</td>
-      <td>buildings/{building-pk-value}/new-building</td>
+      <td>buildings/{building-pk-value}</td>
       <td>PATCH</td>
       <td>Done</td>
-      <td>In development</td>
-      <td></td>
-      <td>In development</td>
-      <td></td>
+      <td>Done</td>
+      <td>Done</td>
+      <td>Done</td>
+      <td>Done</td>
       <td></td>
     </tr>
     <tr>
@@ -446,7 +446,7 @@ URL = /'accounts/registration'
     <tr>
       <td></td>
       <td>Get & Update note</td>
-      <td>notes/{note-pk-value}/update</td>
+      <td>notes/{note-pk-value}</td>
       <td>GET / PATCH</td>
       <td>Done</td>
       <td>Done</td>
