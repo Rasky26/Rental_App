@@ -27,8 +27,8 @@ def send_invalid_permission_response(requested_level=None, level_id=None):
     Used for invalid companies or users sending invites to companies they do not have admin_in status in
     """
     return {
-        "invite-error": f"invalid invite permissions for requested {requested_level}",
-        "detail": f"Can not invite user to company with ID {level_id}",
+        "invite-error": f"Invalid invite permissions for requested {requested_level}",
+        "detail": f"Can not invite user to {requested_level} with ID {level_id}",
     }
 
 
@@ -221,7 +221,6 @@ class CompanyInviteUserViewSet(generics.CreateAPIView):
             company_obj = Companies.objects.get(pk=kwargs["pk"])
 
         # If the company does not exist, return generic response
-
         except Companies.DoesNotExist:
             return Response(
                 data=send_invalid_permission_response(

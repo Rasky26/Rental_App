@@ -32,25 +32,4 @@ class GetAndEditNoteViewset(RetrieveUpdateAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # # Check that the company exist
-        # try:
-        #     company_obj = Companies.objects.get(pk=kwargs["pk"])
-        # # If the company does not exist, return generic response
-        # except Companies.DoesNotExist:
-        #     return Response(
-        #         data=send_invalid_permission_response(
-        #             requested_level="company", level_id=kwargs["pk"]
-        #         ),
-        #         status=status.HTTP_400_BAD_REQUEST,
-        #     )
-
-        # # Check that the requesting user is set as an admin for the indicated company
-        # if not company_obj.allowed_admins.filter(pk=request.user.pk).exists():
-        #     return Response(
-        #         data=send_invalid_permission_response(
-        #             requested_level="company", level_id=kwargs["pk"]
-        #         ),
-        #         status=status.HTTP_400_BAD_REQUEST,
-        #     )
-
         return super().update(request, **kwargs)

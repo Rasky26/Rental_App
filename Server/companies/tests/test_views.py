@@ -383,7 +383,7 @@ class CompaniesInviteListTestCase(TestCase):
         self.assertIn("invite-error", res.data, "Did not find expected key")
         self.assertEqual(
             res.data["invite-error"],
-            "invalid invite permissions for requested company",
+            "Invalid invite permissions for requested company",
             "Custom message did not match",
         )
         self.assertIn("detail", res.data, "Did not find expected key")
@@ -413,7 +413,7 @@ class CompaniesInviteListTestCase(TestCase):
         self.assertIn("invite-error", res.data, "Did not find expected key")
         self.assertEqual(
             res.data["invite-error"],
-            "invalid invite permissions for requested company",
+            "Invalid invite permissions for requested company",
             "Custom message did not match",
         )
         self.assertIn("detail", res.data, "Did not find expected key")
@@ -1263,7 +1263,7 @@ class CompanyUploadDocumentsTestCase(TestCase):
         self.assertIn("invite-error", res.data, "Did not find expected key")
         self.assertEqual(
             res.data["invite-error"],
-            "invalid invite permissions for requested company",
+            "Invalid invite permissions for requested company",
             "Custom message did not match",
         )
         self.assertIn("detail", res.data, "Did not find expected key")
@@ -1302,7 +1302,7 @@ class CompanyUploadDocumentsTestCase(TestCase):
         self.assertIn("invite-error", res.data, "Did not find expected key")
         self.assertEqual(
             res.data["invite-error"],
-            "invalid invite permissions for requested company",
+            "Invalid invite permissions for requested company",
             "Custom message did not match",
         )
         self.assertIn("detail", res.data, "Did not find expected key")

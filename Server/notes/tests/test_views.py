@@ -30,7 +30,7 @@ class NoteViewsTestCase(TestCase):
         data = dict(note="Test note!")
 
         res = c.client.patch(
-            path=f"/notes/{note.id}/update",
+            path=f"/notes/{note.id}",
             data=data,
             content_type="application/json",
         )
@@ -87,7 +87,7 @@ class NoteViewsTestCase(TestCase):
         data = dict(note="Test note!")
 
         res = c2.client.patch(
-            path=f"/notes/{note.id}/update",
+            path=f"/notes/{note.id}",
             data=data,
             content_type="application/json",
         )
@@ -122,7 +122,7 @@ class NoteViewsTestCase(TestCase):
         data = dict(note="Test note!")
 
         res = c.client.patch(
-            path=f"/notes/{note.id}/update",
+            path=f"/notes/{note.id}",
             data=data,
             content_type="application/json",
         )

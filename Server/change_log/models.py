@@ -17,6 +17,8 @@ class ChangeLog(models.Model):
 
         # accounts.models
         USER = "User"
+        # buildings.models
+        BUILDINGS = "Buildings"
         # companies.models
         COMPANIES = "Companies"
         COMPANY_INVITE_LIST = "CompanyInviteList"
@@ -56,4 +58,4 @@ class ChangeLog(models.Model):
         ordering = ("-changed_on",)
 
     def __str__(self):
-        return f"{self.changed_on.strftime('%#I:%M %p - %b. %d, %Y')} | table: '{self.reference_model}: PK {self.model_id}' - {self.previous_value_type}({self.previous_value[:63]}) | Previous author: {self.previous_user}"
+        return f"{self.changed_on.strftime('%#I:%M %p - %b. %d, %Y')} | table: '{self.reference_model}: PK {self.model_id}' - '{self.field_name}: {self.previous_value_type}({self.previous_value[:63]})' | Previous author: {self.previous_user}"
