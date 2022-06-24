@@ -1,14 +1,15 @@
 from notes.models import Notes
+from notes.serializers import NotesSerializer, NoteUpdateSerializer
 from rest_framework import status
-from rest_framework.generics import CreateAPIView
+from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from serializers import CreateNoteSerializer
+
 
 # Create your views here.
 
 
-class EditNoteViewset(CreateAPIView):
+class GetAndEditNoteViewset(RetrieveUpdateAPIView):
     """
     Note deletion is not allowed.
 
@@ -18,32 +19,17 @@ class EditNoteViewset(CreateAPIView):
     """
 
     queryset = Notes.objects.all()
-    serializer_class = CreateNoteSerializer
+    serializer_class = NoteUpdateSerializer
     permission_classes = [IsAuthenticated]
 
-    def create(self, request, **kwargs):
-        """
-        Get the existing note and ensure it exists in the database.
-        If it does, create the new note and link the existing note
-        with that new updated note.
-        """
-        existing_note = Notes.objects.get(kwargs["note"])
+    def update(self, request, **kwargs):
 
-        if existing_note.user != self.request.user:
+        try:
+            note = Notes.objects.get(pk=kwargs["pk"])
+        except Notes.DoesNotExist:
             return Response(
-                {"incorrect-user": "Can not edit different user's note."},
-                status=status.HTTP_401_UNAUTHORIZED,
+                data={"invalid-note": "unable to access requested note"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # If the note already has an edited note linked to it, return error response
-        if existing_note.changed_to:
-            return Response(
-                {
-                    "edit-exist": "Note already has edits applied. Can not edit an edited note."
-                },
-                status=status.HTTP_304_NOT_MODIFIED,
-            )
-
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exceptions=True)
-        new_note = serializer.save(user=self.request.user)
+        return super().update(request, **kwargs)

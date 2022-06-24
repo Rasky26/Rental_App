@@ -1,8 +1,15 @@
-from accounts.serializers import UserReturnStringSerializer
+from accounts.serializers import UserReturnStringSerializer, UsernameSerializer
 from companies.models import Companies, CompanyInviteList
 from contacts.serializers import AddressSerializer, ContactSerializer
+from datetime import datetime, timedelta
+from documents.models import Documents
+from documents.serializers import (
+    DocumentCreationSerializer,
+    DocumentSerializer,
+    ImageSerializer,
+)
 from general_ledger.serializers import GeneralLedgerNoCodeSerializer
-from notes.serializers import CreateNoteSerializer, NotesNewlyCreatedSerializer
+from notes.serializers import NoteCreateSerializer, NotesSerializer
 from rest_framework import serializers
 
 
@@ -14,7 +21,7 @@ class CompanyCreationSerializer(serializers.ModelSerializer):
     business_address = AddressSerializer()
     mailing_address = AddressSerializer()
     contacts = ContactSerializer(many=True)
-    notes = CreateNoteSerializer(many=True)
+    notes = NoteCreateSerializer(many=True)
 
     class Meta:
         model = Companies
@@ -28,9 +35,11 @@ class CompanyCreationSerializer(serializers.ModelSerializer):
         )
 
 
-class CompanyNewlyCreatedSerializer(serializers.ModelSerializer):
+class CompanyFullAdminSerializer(serializers.ModelSerializer):
     """
-    Serializes all fields of the Company model
+    Serializes all fields of the Company model.
+
+    Should be used with allowed_admins users due to comprehensive nature.
     """
 
     business_address = AddressSerializer()
@@ -39,9 +48,11 @@ class CompanyNewlyCreatedSerializer(serializers.ModelSerializer):
     gl_code = GeneralLedgerNoCodeSerializer()
     accounts_payable_gl = GeneralLedgerNoCodeSerializer()
     accounts_receivable_gl = GeneralLedgerNoCodeSerializer()
-    allowed_admins = UserReturnStringSerializer(many=True)
-    allowed_viewers = UserReturnStringSerializer(many=True)
-    notes = NotesNewlyCreatedSerializer(many=True, read_only=True)
+    allowed_admins = UsernameSerializer(many=True)
+    allowed_viewers = UsernameSerializer(many=True)
+    documents = DocumentSerializer(many=True)
+    images = ImageSerializer(many=True)
+    notes = NotesSerializer(many=True, read_only=True)
 
     class Meta:
         model = Companies
@@ -57,6 +68,8 @@ class CompanyNewlyCreatedSerializer(serializers.ModelSerializer):
             "accounts_receivable_gl",
             "allowed_admins",
             "allowed_viewers",
+            "documents",
+            "images",
             "notes",
             "accounts_payable_extension",
             "accounts_receivable_extension",
@@ -76,4 +89,52 @@ class CompanyInviteListSerializer(serializers.ModelSerializer):
             "email",
             "admin_in",
             "viewer_in",
+        )
+
+
+class CompanyNameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Companies
+        fields = ("company_name",)
+
+
+class CompanyInviteListActiveSerializer(serializers.ModelSerializer):
+    admin_in = CompanyNameSerializer(many=False, read_only=True)
+    viewer_in = CompanyNameSerializer(many=False, read_only=True)
+    valid_until = serializers.SerializerMethodField(method_name="get_valid_until")
+
+    class Meta:
+        model = CompanyInviteList
+        fields = (
+            "email",
+            "admin_in",
+            "viewer_in",
+            "valid_until",
+        )
+
+    def get_valid_until(self, obj):
+        return (obj.updated_at + timedelta(days=7)).strftime(
+            "%b. %d, %Y - %I:%M %p UTC"
+        )
+
+
+##############################################
+#   Upload Document To Company Serializer    #
+##############################################
+
+
+class CompanyUploadDocumentsSerializer(serializers.ModelSerializer):
+    """
+    Serializes documents to be attached to a specific company
+    """
+
+    # notes = NoteCreateSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Documents
+        fields = (
+            "name",
+            "document",
+            # "uploaded_by",
+            # "notes",
         )

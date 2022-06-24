@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import RegexValidator
+from notes.models import Notes
 
 # Create your models here.
 
@@ -63,8 +64,8 @@ class Addresses(models.Model):
         WISCONSIN = "WI", "Wisconsin"
         WYOMING = "WY", "Wyoming"
 
-    address1 = models.CharField("Address 1", max_length=255, blank=True)
-    address2 = models.CharField("Address 2", max_length=63, blank=True)
+    address_1 = models.CharField("Address 1", max_length=255, blank=True)
+    address_2 = models.CharField("Address 2", max_length=63, blank=True)
     city = models.CharField(max_length=127, blank=True)
     state = models.CharField(max_length=2, choices=StateList.choices, blank=True)
     zipcode = models.CharField(
@@ -78,12 +79,13 @@ class Addresses(models.Model):
             ),
         ],
     )
+    notes = models.ManyToManyField(Notes, related_name="address_notes_set", blank=True)
 
     class Meta:
         ordering = (
             "state",
             "city",
-            "address1",
+            "address_1",
         )
         verbose_name = "Address"
         verbose_name_plural = "Addresses"
@@ -97,7 +99,7 @@ class Addresses(models.Model):
         first = True
         # Enumerate to check against zipcode, which needs no comma
         for step, item in enumerate(
-            [self.address1, self.address2, self.city, self.state, self.zipcode]
+            [self.address_1, self.address_2, self.city, self.state, self.zipcode]
         ):
             # Add the first item to the address string.
             # Set flag to false
@@ -150,6 +152,7 @@ class Contacts(models.Model):
         ],
     )
     email = models.EmailField(blank=True, null=True, unique=False)
+    notes = models.ManyToManyField(Notes, related_name="contacts_notes_set", blank=True)
 
     class Meta:
         ordering = (

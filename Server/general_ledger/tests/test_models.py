@@ -2,7 +2,6 @@ from django.test import TestCase
 from general_ledger.models import GeneralLedgerCodes
 from notes.tests.generic_functions import random_string, random_sentence
 from notes.tests.test_models import create_note
-import random
 import string
 
 

@@ -1,5 +1,5 @@
 from django.test import TestCase
-from accounts.tests.test_models import create_user_obj
+from accounts.tests.test_models import CreateUser
 from notes.models import Notes
 from notes.tests.generic_functions import random_bell_curve_int, random_sentence
 import random
@@ -12,11 +12,13 @@ def create_note(text=None, user=None):
     """
     # If no values were passed
     if (not text) and (not user):
+        c = CreateUser()
+        c.create_user()
         return Notes.objects.create(
             note=random_sentence(
                 total_len=random_bell_curve_int(low=4, high=128), allow_numbers=True
             ),
-            user=create_user_obj(),
+            user=c.user,
         )
 
     # If no note text was passed
@@ -30,7 +32,9 @@ def create_note(text=None, user=None):
 
     # If not user object was passed
     if not user:
-        return Notes.objects.create(note=text, user=create_user_obj())
+        c = CreateUser()
+        c.create_user()
+        return Notes.objects.create(note=text, user=c.user)
 
     # If all fields were passed
     return Notes.objects.create(note=text, user=user)
@@ -43,9 +47,6 @@ class NoteModelsTestCase(TestCase):
 
     @classmethod
     def setUpTestData(self) -> None:
-        # print(
-        #     "setUpTestData: Run once to set up non-modified data for all class methods."
-        # )
         return super().setUpTestData()
 
     @classmethod
@@ -59,11 +60,11 @@ class NoteModelsTestCase(TestCase):
         """
         Verifies the information of a newly created note
         """
-        user = create_user_obj()
-        note = create_note(text="Testing", user=user)
-        self.assertEqual(note.user_id, user.id, "User ID mis-match on Note creation")
+        c = CreateUser()
+        c.create_user()
+        note = create_note(text="Testing", user=c.user)
+        self.assertEqual(note.user_id, c.user.id, "User ID mis-match on Note creation")
         self.assertEqual(note.note, "Testing", "Note text mis-match on Note creation")
-        self.assertIsNone(note.changed_to, "Value was not None")
         self.assertTrue(note.created_at, "Created at time was not assigned")
         self.assertTrue(note.updated_at, "Updated at time was no assigned")
 
@@ -115,53 +116,15 @@ class NoteModelsTestCase(TestCase):
             "Note text did not match",
         )
 
-    def test_current_note_deletion_previous_note_remains(self):
-        """
-        Tests that when the current note is deleted that the previous note remains.
-        """
-        note_1 = create_note()
-        note_2 = create_note()
-        note_1.changed_to = note_2
-        note_1.save()
-        note_2.save()
-        note_2.delete()
-        self.assertEqual(
-            Notes.objects.all().count(),
-            0,
-            f"Expected 0 notes, found {Notes.objects.all().count()}",
-        )
-
-    def test_original_note_deletion_removes_linked_note(self):
+    def test_note_deletion_leaves_other_note(self):
         """
         Tests that when the previous note is deleted that the current note is removed too.
         """
         note_1 = create_note()
-        note_2 = create_note()
-        note_1.changed_to = note_2
-        note_1.save()
-        note_2.save()
+        create_note()
         note_1.delete()
         self.assertEqual(
             Notes.objects.all().count(),
             1,
             f"Expected 1 note, found {Notes.objects.all().count()}",
-        )
-
-    def test_original_note_deletion_removes_all_linked_notes(self):
-        """
-        Tests that when the previous note is deleted that the current note is removed too.
-        """
-        note_1 = create_note()
-        note_2 = create_note()
-        note_3 = create_note()
-        note_1.changed_to = note_2
-        note_2.changed_to = note_3
-        note_1.save()
-        note_2.save()
-        note_3.save()
-        note_1.delete()
-        self.assertEqual(
-            Notes.objects.all().count(),
-            2,
-            f"Expected 2 notes, found {Notes.objects.all().count()}",
         )

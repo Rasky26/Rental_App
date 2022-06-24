@@ -1,15 +1,13 @@
-from accounts.tests.test_models import create_user_obj, CreateUser
+from accounts.tests.test_models import CreateUser
 from companies.models import Companies, CompanyInviteList
 from contacts.tests.test_models import create_address_obj, create_contact_obj
+from datetime import datetime
 from django.test import TestCase
 from general_ledger.tests.test_models import create_general_ledger_obj
-from notes.tests.generic_functions import (
-    random_bell_curve_int,
-    random_length_string,
-    random_string,
-)
+from notes.tests.generic_functions import random_length_string
 from notes.tests.test_models import create_note
-import string
+from unittest import mock
+import pytz
 
 
 def create_company_obj(
@@ -69,17 +67,17 @@ def create_company_invite(company_obj=None, email=None, admin_in=False, viewer_i
     if not company_obj:
         company_obj = create_company_obj()
     if not email:
-        email = (
-            f"{random_string(length=random_bell_curve_int(low=4,high=20))}@email.com"
-        )
+        email = f"{random_length_string(low=4,high=20)}@email.com"
     if admin_in:
         admin_in = company_obj
         viewer_in = None
-    if viewer_in:
+    elif viewer_in:
         admin_in = None
         viewer_in = company_obj
     return CompanyInviteList.objects.create(
-        email=email, admin_in=admin_in, viewer_in=viewer_in
+        email=email,
+        admin_in=admin_in,
+        viewer_in=viewer_in,
     )
 
 
@@ -90,9 +88,6 @@ class CompaniesModelsTestCase(TestCase):
 
     @classmethod
     def setUpTestData(cls) -> None:
-        # print(
-        #     "setUpTestData: Run once to set up non-modified data for all class methods."
-        # )
         return super().setUpTestData()
 
     @classmethod
@@ -181,9 +176,6 @@ class CompaniesInviteListModelsTestCase(TestCase):
 
     @classmethod
     def setUpTestData(cls) -> None:
-        # print(
-        #     "setUpTestData: Run once to set up non-modified data for all class methods."
-        # )
         return super().setUpTestData()
 
     @classmethod
@@ -197,35 +189,28 @@ class CompaniesInviteListModelsTestCase(TestCase):
         """
         Admin invititation for a company
         """
-        invite = create_company_invite(email="test@email.com")
-        self.assertEqual(str(invite), "test@email.com - Viewer Invitation")
+        # Set outdated timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+            invite = create_company_invite(email="test@email.com")
+
+        self.assertEqual(
+            str(invite),
+            "test@email.com - Viewer Invitation - Valid until: Dec. 08, 2021 - 12:00 AM UTC",
+            "Non-matching string, check if timeout date field has changed",
+        )
 
     def test_company_admin_invite(self):
         """
         Admin invititation for a company
         """
-        invite = create_company_invite(
-            email="test@email.com", admin_in=True, viewer_in=False
-        )
-        self.assertEqual(str(invite), "test@email.com - Admin Invitation")
+        # Set outdated timestamp
+        mocked = datetime(2021, 12, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        with mock.patch("django.utils.timezone.now", mock.Mock(return_value=mocked)):
+            invite = create_company_invite(email="test@email.com", admin_in=True)
 
-    def test_no_duplicate_admin_invites_for_company(self):
-        """
-        Do not allow duplicate company invites for admin user
-        """
-        company = create_company_obj()
-        email = "test@email.com"
-
-        CompanyInviteList.objects.create(email=email, admin_in=company, viewer_in=None)
         self.assertEqual(
-            len(CompanyInviteList.objects.filter(email="test@email.com")),
-            1,
-            "Expected 1 invite",
-        )
-
-        CompanyInviteList.objects.create(email=email, admin_in=company, viewer_in=None)
-        self.assertEqual(
-            len(CompanyInviteList.objects.filter(email="test@email.com")),
-            1,
-            "Expected 1 invite",
+            str(invite),
+            "test@email.com - Admin Invitation - Valid until: Dec. 08, 2021 - 12:00 AM UTC",
+            "Non-matching string, check if timeout date field has changed",
         )

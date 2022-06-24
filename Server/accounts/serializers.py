@@ -1,8 +1,5 @@
-from .models import User
+from accounts.models import User
 from rest_framework import serializers
-from django.contrib.auth import get_user_model  # If used custom user model
-
-# UserModel = get_user_model()
 
 
 class RegistraterUserSerializer(serializers.ModelSerializer):
@@ -14,7 +11,6 @@ class RegistraterUserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
 
-        # user = UserModel.objects.create_user(
         user = User.objects.create_user(
             username=validated_data["username"],
             password=validated_data["password"],
@@ -22,7 +18,6 @@ class RegistraterUserSerializer(serializers.ModelSerializer):
         return user
 
     class Meta:
-        # model = UserModel
         model = User
         fields = (
             "id",
@@ -41,5 +36,18 @@ class UserReturnStringSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id",
-            "__str__",
+            "display_name",
+        )
+
+
+class UsernameSerializer(serializers.ModelSerializer):
+    """
+    Returns the username
+    """
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
         )

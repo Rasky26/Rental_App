@@ -1,20 +1,35 @@
-from companies.models import Companies
+from accounts.models import User
+from companies.models import Companies, CompanyInviteList
 from companies.serializers import (
+    CompanyFullAdminSerializer,
     CompanyCreationSerializer,
-    CompanyNewlyCreatedSerializer,
-    CompanyInviteList,
+    CompanyInviteListActiveSerializer,
+    CompanyInviteListSerializer,
+    CompanyUploadDocumentsSerializer,
 )
-from contacts.functions import populate_address_dict
+from contacts.functions import populate_address_dict, populate_contact_dict
 from contacts.models import Addresses, Contacts
 from django.db import transaction
+from django.db.models import Q
 from general_ledger.models import GeneralLedgerCodes
 from notes.models import Notes
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status
 
 # Create your views here.
+
+
+def send_invalid_permission_response(requested_level=None, level_id=None):
+    """
+    Generic error response for invalid permission levels.
+
+    Used for invalid companies or users sending invites to companies they do not have admin_in status in
+    """
+    return {
+        "invite-error": f"Invalid invite permissions for requested {requested_level}",
+        "detail": f"Can not invite user to {requested_level} with ID {level_id}",
+    }
 
 
 class CompanyCreationViewSet(generics.CreateAPIView):
@@ -28,7 +43,7 @@ class CompanyCreationViewSet(generics.CreateAPIView):
     serializer_class = CompanyCreationSerializer
     permission_classes = (IsAuthenticated,)
 
-    def create(self, request, *args, **kwargs):
+    def create(self, request):
 
         # Serialize the data
         serializer = self.get_serializer(data=request.data)
@@ -133,6 +148,8 @@ class CompanyCreationViewSet(generics.CreateAPIView):
 
             # If contacts are present, loop through each contact
             for contact in contact_list:
+                # Clean-up the contact information
+                contact = populate_contact_dict(contact)
                 # Create the contact
                 contact_obj = Contacts.objects.create(**contact)
                 # Add that contact object to the ManyToMany contacts field
@@ -154,7 +171,7 @@ class CompanyCreationViewSet(generics.CreateAPIView):
         headers = self.get_success_headers(company_obj)
 
         return Response(
-            data=CompanyNewlyCreatedSerializer(company_obj).data,
+            data=CompanyFullAdminSerializer(company_obj).data,
             status=status.HTTP_201_CREATED,
             headers=headers,
         )
@@ -171,34 +188,271 @@ class CompanyInviteUserViewSet(generics.CreateAPIView):
     """
 
     queryset = CompanyInviteList.objects.all()
-    serializer_class = CompanyInviteList
+    serializer_class = CompanyInviteListSerializer
     permission_classes = (IsAuthenticated,)
 
-    def send_bad_invite_response(self, company_id=None):
-        """
-        Generic error response for invalid invite request.
-
-        Used for invalid companies or users sending invites to companies they do not have admin_in status in
-        """
-        return {
-            "invite-error": "can not send invite to requested company",
-            "detail": f"Can not invite user to company with ID {company_id}",
-        }
-
     def create(self, request, **kwargs):
+        """
+        Manages the company invite request methods. Cleans the database of expired invites, then does the following:
+
+        1.) Ensure the company exists
+        2.) Verify the request user has 'allowed_admins' privilege in company
+        3.) Check that the request is for EITHER admin_in OR viewer_in, not BOTH
+        4.) If the requested email has an associated User model object, check if that object exists in the company permissions
+            4.1) If user is admin in company and admin role requested, do not send invite
+            4.2) If user is viewer in company and admin role requested, send invite
+            4.3) If user is admin in company and viewer role requested, do not send invite - (handle via company role manager)
+            4.4) If user is viewer in company and viewer role requested, do not send invite
+        <If not step 4>
+        5.) Inspect invites for existing records
+            5.1) If email does not have current admin or viewer invites and an admin is requested, send invite
+            5.2) If email has an admin invite and a viewer role requested, do not send invite
+                5.3) Inform request.user of the current active invite
+        """
+
+        # Clean the invite database of timed-out invites
+        # Get a list of all the expired invites
+        expired_invite_ids = [obj.id for obj in self.queryset.all() if obj.timeout]
+        # Delete those rows
+        self.queryset.filter(id__in=expired_invite_ids).delete()
+
         # Check that the company exist
         try:
             company_obj = Companies.objects.get(pk=kwargs["pk"])
+
+        # If the company does not exist, return generic response
         except Companies.DoesNotExist:
-            # If the company does not exist, return generic response
             return Response(
-                data=self.send_bad_invite_response(kwargs["pk"]),
+                data=send_invalid_permission_response(
+                    requested_level="company", level_id=kwargs["pk"]
+                ),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        print(
-            company_obj.allowed_admins.filter(pk=request.user.pk).exists(),
-            ">>>>>>>>>>>>>>>>>>>>>>>",
-        )
+        # Check that the requesting user is set as an admin for the indicated company
+        if not company_obj.allowed_admins.filter(pk=request.user.pk).exists():
+            return Response(
+                data=send_invalid_permission_response(
+                    requested_level="company", level_id=kwargs["pk"]
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        return Response({})
+        # Verify there is one False and one True item in the request.data.
+        # Sort the information for easier comparison
+        if sorted([request.data["admin_in"], request.data["viewer_in"]]) != [
+            False,
+            True,
+        ]:
+            return Response(
+                {
+                    "invalid-invite": "clashing permission levels specified",
+                    "invalid-info": f"admin_in was '{request.data['admin_in']}' & viewer_in was '{request.data['viewer_in']}'",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # If the data was passed correct, over-write the booleans with the company object
+        # If admin_in was True, set the company object for the admin
+        if request.data["admin_in"]:
+            request.data["admin_in"] = company_obj.id
+            request.data["viewer_in"] = None
+        # Otherwise, set the company object to the viewer_in field
+        else:
+            request.data["admin_in"] = None
+            request.data["viewer_in"] = company_obj.id
+
+        # Serialize the data
+        serializer = self.get_serializer(data=request.data)
+
+        # Check if the information is correct
+        if not serializer.is_valid():
+            return Response(
+                {"invite-error": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # If admin in company, admin requested, do not send invite
+        # If viewer in company, admin requested, set invite
+        # If admin in company, viewer requested, do not send invite
+        # If viewer in company, viewer requested, do not send invite
+        # If not admin or viewer, admin requested, set invite (no dups)
+        # If not admin or viewer, viewer requested, check if invite exists, if not set invite (no dups)
+
+        # Get the requested user object to check if they already are in the permissions group
+        try:
+            invitee_obj = User.objects.get(email=serializer.validated_data["email"])
+
+            existing_admin = company_obj.allowed_admins.filter(
+                pk=invitee_obj.pk
+            ).exists()
+            existing_viewer = company_obj.allowed_viewers.filter(
+                pk=invitee_obj.pk
+            ).exists()
+
+            if serializer.validated_data["admin_in"]:
+                if existing_admin:
+                    return Response(
+                        {
+                            "existing-admin": f"Requested user with email '{serializer.validated_data['email']}' is already set as an admin for '{company_obj.company_name}'",
+                            "existing-email": serializer.validated_data["email"],
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+                elif existing_viewer:
+                    return Response(
+                        {
+                            "existing-viewer": f"Requested user with email '{serializer.validated_data['email']}' is already set as a viewer for '{company_obj.company_name}'",
+                            "existing-email": serializer.validated_data["email"],
+                            "no-change": "Viewer status unchanged. Change permission levels in the company parameters.",
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+            elif serializer.validated_data["viewer_in"]:
+                if existing_admin:
+                    return Response(
+                        {
+                            "existing-admin": f"Requested user with email '{serializer.validated_data['email']}' is already set as an admin for '{company_obj.company_name}'",
+                            "existing-email": serializer.validated_data["email"],
+                            "no-change": "Admin status unchanged. Change permission levels in the company parameters.",
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+                elif existing_viewer:
+                    return Response(
+                        {
+                            "existing-viewer": f"Requested user with email '{serializer.validated_data['email']}' is already set as a viewer for '{company_obj.company_name}'",
+                            "existing-email": serializer.validated_data["email"],
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+            # If the user exists, but is not assigned to the current company,
+            # this will set their permission level
+            invite_obj = CompanyInviteList.objects.create(**serializer.validated_data)
+            return Response(
+                data=CompanyInviteListActiveSerializer(invite_obj).data,
+                status=status.HTTP_201_CREATED,
+                headers=self.get_success_headers(invite_obj),
+            )
+
+        except User.DoesNotExist:
+            qs_user_invites = self.queryset.filter(
+                email=serializer.validated_data["email"]
+            )
+
+            # No email user exists, so create the invitation
+            if not qs_user_invites.exists():
+                invite_obj = CompanyInviteList.objects.create(
+                    **serializer.validated_data
+                )
+                return Response(
+                    data=CompanyInviteListActiveSerializer(invite_obj).data,
+                    status=status.HTTP_201_CREATED,
+                    headers=self.get_success_headers(invite_obj),
+                )
+
+            # If a queryset exists, there should be only one entry for the email and company combination.
+            # Wrapped in try / except block as a fail-safe for errors
+            try:
+                invite_obj = self.queryset.get(
+                    Q(email=serializer.validated_data["email"]),
+                    Q(admin_in=kwargs["pk"]) | Q(viewer_in=kwargs["pk"]),
+                )
+
+                invite_obj.admin_in = serializer.validated_data["admin_in"]
+                invite_obj.viewer_in = serializer.validated_data["viewer_in"]
+                invite_obj.save()
+
+                return Response(
+                    data=CompanyInviteListActiveSerializer(invite_obj).data,
+                    status=status.HTTP_201_CREATED,
+                    headers=self.get_success_headers(invite_obj),
+                )
+
+            # This is the fail-safe. Should never reach this.
+            except CompanyInviteList.MultipleObjectsReturned:
+                # Get all matching invite records
+                invite_obj = self.queryset.filter(
+                    Q(email=serializer.validated_data["email"]),
+                    Q(admin_in=kwargs["pk"]) | Q(viewer_in=kwargs["pk"]),
+                )
+                # Get a list of all their IDs
+                invite_obj_ids = list(invite_obj.values_list("id", flat=True))
+                # Remove all records, except for the first record
+                invite_obj.filter(id__in=invite_obj_ids[1:]).delete()
+                # Reset the variable to the only object left
+                invite_obj = invite_obj.first()
+
+                # Save with updated data as standard
+                invite_obj.admin_in = serializer.validated_data["admin_in"]
+                invite_obj.viewer_in = serializer.validated_data["viewer_in"]
+                invite_obj.save()
+
+                return Response(
+                    data=CompanyInviteListActiveSerializer(invite_obj).data,
+                    status=status.HTTP_201_CREATED,
+                    headers=self.get_success_headers(invite_obj),
+                )
+
+
+class CompanyUploadDocumentViewSet(generics.CreateAPIView):
+    """
+    Handles the upload of several documents at once.
+    """
+
+    queryset = Companies.objects.all()
+    serializer_class = CompanyUploadDocumentsSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def create(self, request, **kwargs):
+
+        # Check that the company exist
+        try:
+            company_obj = Companies.objects.get(pk=kwargs["pk"])
+        # If the company does not exist, return generic response
+        except Companies.DoesNotExist:
+            return Response(
+                data=send_invalid_permission_response(
+                    requested_level="company", level_id=kwargs["pk"]
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check that the requesting user is set as an admin for the indicated company
+        if not company_obj.allowed_admins.filter(pk=request.user.pk).exists():
+            return Response(
+                data=send_invalid_permission_response(
+                    requested_level="company", level_id=kwargs["pk"]
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Serialize the data
+        serializer = self.get_serializer(data=request.data)
+
+        # Check if the information is correct
+        if not serializer.is_valid():
+            return Response(
+                {"document-upload-error": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Save the information behind an atomic transaction
+        with transaction.atomic():
+
+            # Save the document and corresponding information
+            doc_obj = serializer.save(uploaded_by=request.user)
+
+            # Add that document reference to the company object
+            company_obj.documents.add(doc_obj)
+
+        # Set the response headers
+        headers = self.get_success_headers(company_obj)
+
+        return Response(
+            data=CompanyFullAdminSerializer(company_obj).data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
